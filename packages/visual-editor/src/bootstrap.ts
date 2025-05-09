@@ -98,7 +98,7 @@ function bootstrap(args: BootstrapArguments = {}) {
       moduleInvocationFilter: args?.moduleInvocationFilter,
     };
 
-    window.oncontextmenu = (evt) => evt.preventDefault();
+    // window.oncontextmenu = (evt) => evt.preventDefault();
 
     const main = new Main(config);
     document.body.appendChild(main);
