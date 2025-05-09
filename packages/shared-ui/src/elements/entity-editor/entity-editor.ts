@@ -87,6 +87,14 @@ const INVALID_ITEM = html`<div id="invalid-item">
   Unable to render selected item
 </div>`;
 
+const AI_FLOW_ORIGINS = [
+  'https://aiflow.corp.google.com',
+  'https://aiflow-qa.corp.google.com',
+  'https://aiflow-autopush.corp.google.com',
+];
+
+const ITERATE_ON_PROMPT_TYPE = 'iterate_on_prompt';
+
 @customElement("bb-entity-editor")
 export class EntityEditor extends SignalWatcher(LitElement) {
   @property()
@@ -153,7 +161,7 @@ export class EntityEditor extends SignalWatcher(LitElement) {
         }
 
         & input {
-          flex: 1 0 auto;
+          flex: 1 1 auto;
           font: 500 var(--bb-title-medium) / var(--bb-title-line-height-medium)
             var(--bb-font-family);
           background: transparent;
@@ -175,6 +183,32 @@ export class EntityEditor extends SignalWatcher(LitElement) {
           height: 20px;
           flex: 0 0 auto;
           margin-right: var(--bb-grid-size);
+        }
+      }
+
+      #iterate-on-prompt {
+        height: var(--bb-grid-size-7);
+        white-space: nowrap;
+        padding: 0 var(--bb-grid-size-4) 0 var(--bb-grid-size-4);
+        border-radius: var(--bb-grid-size-16);
+        margin: 0 var(--bb-grid-size-2) 0 0;
+        background: var(--bb-neutral-0);
+
+        color: #004a77;
+        font: 500 var(--bb-title-small) / var(--bb-title-line-height-small)
+          var(--bb-font-family);
+        display: flex;
+        align-items: center;
+        border-radius: 100px;
+        border: none;
+        transition: background 0.2s cubic-bezier(0, 0, 0.3, 1);
+        cursor: pointer;
+
+        background: var(--bb-grid-size-3) center / 18px 18px no-repeat #c2e7ff;
+
+        &:hover,
+        &:focus {
+          background-color: #96d6ff;
         }
       }
 
@@ -1061,7 +1095,8 @@ export class EntityEditor extends SignalWatcher(LitElement) {
             );
           }
         });
-
+      const topOrigin = window.top?.origin;
+      const isInAiFlow = topOrigin && AI_FLOW_ORIGINS.includes(topOrigin); 
       return html`<div class=${classMap(classes)}>
         <h1 id="title">
           <input
@@ -1079,6 +1114,7 @@ export class EntityEditor extends SignalWatcher(LitElement) {
               this.#submit(this.values);
             }}
           />
+          ${isInAiFlow ? this.#renderIterateOnPromptButton(): nothing}
         </h1>
         <div id="type"></div>
         <div id="content">
@@ -1090,6 +1126,42 @@ export class EntityEditor extends SignalWatcher(LitElement) {
     });
 
     return html`${until(value, html`<div id="generic-status">Loading...</div>`)}`;
+  }
+
+  #renderIterateOnPromptButton(){
+    const pathname = new URL(this.graph?.raw().url ?? window.location.href).pathname;
+    const matches = pathname.match(new RegExp('/board/boards/(.*\.bgl\.json).*'));
+    if (!matches) {
+      return nothing;
+    }
+    const opalId = matches[1];
+    return html`
+      <button 
+        id="iterate-on-prompt" 
+        @click=${() => {
+          // The prompt template must retrieved on click, otherwise the user's most 
+          // recent changes will not be included in the prompt.
+          if (!this.#formRef.value) {
+            return;
+          }
+          const formValues = this.#copyFormValues(this.#formRef.value!);
+          if (!formValues.config$prompt) {
+            return;
+          }
+          const promptTemplate = formValues.config$prompt;
+          // Because the iframe could be present in any AI Flow environment,
+          // send a postMessage to each possible origin.
+          AI_FLOW_ORIGINS.forEach(origin => {
+            top?.postMessage({
+              type: ITERATE_ON_PROMPT_TYPE,
+              prompt_template: promptTemplate, 
+              opal_id: opalId
+            }, origin);
+          });
+          console.log(promptTemplate);
+          console.log(opalId);}}>
+        Iterate on prompt
+      </button>`;
   }
 
   #renderTextEditorPort(
