@@ -1,6 +1,6 @@
 {
   "name": "@breadboard-ai/idb-board-server",
-  "version": "1.19.3",
+  "version": "1.19.4",
   "description": "IDB Board Server for Breadboard",
   "main": "./dist/index.js",
   "exports": {
@@ -75,17 +75,17 @@
     "ava": "^5.2.0",
     "dotenv": "^16.4.7",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.2",
-    "vite": "^6.2.6",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.7",
     "vite-plugin-full-reload": "^1.2.0",
     "vite-plugin-watch-and-run": "^1.7.4",
     "vitest": "^3.1.1"
   },
   "dependencies": {
-    "@breadboard-ai/build": "0.12.1",
-    "@breadboard-ai/data-store": "0.3.2",
-    "@google-labs/breadboard": "^0.33.0",
-    "@google-labs/breadboard-schema": "^1.13.0",
+    "@breadboard-ai/build": "0.12.2",
+    "@breadboard-ai/data-store": "0.3.3",
+    "@google-labs/breadboard": "^0.34.0",
+    "@google-labs/breadboard-schema": "^1.14.0",
     "idb": "^8.0.2",
     "idb-keyval": "^6.2.1"
   }

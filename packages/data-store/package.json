@@ -1,6 +1,6 @@
 {
   "name": "@breadboard-ai/data-store",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "A data store implementation to support Breadboard",
   "main": "./dist/src/index.js",
   "exports": {
@@ -145,17 +145,17 @@
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "@web/dev-server-esbuild": "^1.0.4",
-    "@web/test-runner": "^0.20.0",
+    "@web/test-runner": "^0.20.1",
     "ava": "^5.2.0",
     "esbuild": "^0.25.2",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.3"
   },
   "engines": {
     "node": ">=20.14.0"
   },
   "dependencies": {
-    "@breadboard-ai/types": "0.6.0",
-    "@google-labs/breadboard": "^0.33.0",
+    "@breadboard-ai/types": "0.7.0",
+    "@google-labs/breadboard": "^0.34.0",
     "idb": "^8.0.2"
   }
 }

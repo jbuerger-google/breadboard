@@ -38,7 +38,7 @@ export class TextEditor extends LitElement {
     return "string";
   }
 
-  @property()
+  @property({ reflect: true, type: Boolean })
   accessor supportsFastAccess = true;
 
   @property()
@@ -70,7 +70,7 @@ export class TextEditor extends LitElement {
       #editor {
         outline: none;
         display: block;
-        white-space: pre-line;
+        white-space: break-spaces;
         height: var(--text-editor-height, auto);
         width: 100%;
         min-height: 100%;
@@ -83,7 +83,7 @@ export class TextEditor extends LitElement {
           var(--text-editor-padding-left, var(--bb-grid-size-2));
 
         &.placeholder::before {
-          content: "Type your prompt here. You can use @ to add assets or previous step outputs.";
+          content: "Type your prompt here";
           font: normal var(--bb-body-medium) / var(--bb-body-line-height-medium)
             var(--bb-font-family);
           color: var(--bb-neutral-600);
@@ -93,6 +93,10 @@ export class TextEditor extends LitElement {
           top: var(--text-editor-padding-top, var(--bb-grid-size-2));
           left: var(--text-editor-padding-left, var(--bb-grid-size-2));
         }
+      }
+
+      :host([supportsFastAccess]) #editor.placeholder::before {
+        content: "Type your prompt here. Use @ to include other content.";
       }
 
       bb-fast-access-menu {
@@ -121,6 +125,7 @@ export class TextEditor extends LitElement {
   #value = "";
   #renderableValue = "";
   #isUsingFastAccess = false;
+  #showFastAccessMenuOnKeyUp = false;
   #lastRange: Range | null = null;
   #editorRef: Ref<HTMLSpanElement> = createRef();
   #proxyRef: Ref<HTMLDivElement> = createRef();
@@ -203,8 +208,14 @@ export class TextEditor extends LitElement {
     this.#lastRange = this.#getCurrentRange();
   }
 
+  #isRangeValid(range: Range) {
+    return (
+      this.#editorRef.value?.contains(range.commonAncestorContainer) ?? false
+    );
+  }
+
   restoreLastRange(offsetLastChar = true) {
-    if (!this.#lastRange) {
+    if (!this.#lastRange || !this.#isRangeValid(this.#lastRange)) {
       return;
     }
 
@@ -223,7 +234,13 @@ export class TextEditor extends LitElement {
     }
 
     selection.removeAllRanges();
-    selection.addRange(this.#lastRange);
+    try {
+      console.log(this.#isRangeValid(this.#lastRange));
+      selection.addRange(this.#lastRange);
+    } catch (err) {
+      console.log(11111);
+      console.log(err);
+    }
   }
 
   addItem(
@@ -545,7 +562,13 @@ export class TextEditor extends LitElement {
       ""
     );
     this.#value = escapeHTMLEntities(value);
-    this.dispatchEvent(new InputEvent("input"));
+    this.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      })
+    );
   }
 
   #togglePlaceholder(forcedValue?: boolean) {
@@ -659,18 +682,19 @@ export class TextEditor extends LitElement {
       return;
     }
 
-    this.#editorRef.value.focus({ preventScroll: true });
-
     const selection = this.#getCurrentSelection();
     if (!selection || !this.#editorRef.value.lastChild) {
       return;
     }
 
     const range = new Range();
-    range.selectNode(this.#editorRef.value.lastChild);
+    range.selectNodeContents(this.#editorRef.value);
     range.collapse(false);
     selection.removeAllRanges();
     selection.addRange(range);
+
+    this.#editorRef.value.scrollTop = this.#editorRef.value.scrollHeight;
+    this.#editorRef.value.focus();
   }
 
   #showFastAccess(bounds: DOMRect | undefined) {
@@ -769,6 +793,10 @@ export class TextEditor extends LitElement {
             return;
           }
 
+          if (evt.key === "@") {
+            this.#showFastAccessMenuOnKeyUp = true;
+          }
+
           if (/\W/.test(evt.key)) {
             this.#togglePlaceholder(false);
           }
@@ -780,7 +808,12 @@ export class TextEditor extends LitElement {
             return;
           }
 
-          if (this.projectState && this.supportsFastAccess && evt.key === "@") {
+          if (
+            this.projectState &&
+            this.supportsFastAccess &&
+            this.#showFastAccessMenuOnKeyUp
+          ) {
+            this.#showFastAccessMenuOnKeyUp = false;
             this.storeLastRange();
             const bounds = this.#lastRange?.getBoundingClientRect();
             this.#showFastAccess(bounds);

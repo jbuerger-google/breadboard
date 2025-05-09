@@ -10,9 +10,18 @@ COPY --from=breadboard / .
 
 RUN npm clean-install
 
+ARG VITE_BOARD_SERVICE
+ARG VITE_GOOGLE_DRIVE_PUBLIC_API_KEY
+ARG VITE_GOOGLE_DRIVE_FEATURED_GALLERY_FOLDER_ID
+ARG VITE_GOOGLE_DRIVE_PUBLISH_PERMISSIONS
+
+# Built-time vars
+ENV VITE_BOARD_SERVICE=${VITE_BOARD_SERVICE:-/board/}
+
 WORKDIR packages/unified-server
 RUN npm run build
 
+# Run-time vars
 ENV CONNECTIONS_FILE="/breadboard/packages/unified-server/secrets/secrets.json"
 ENV NODE_ENV="production"
 ENV FIRESTORE_DB_NAME="unified-server"

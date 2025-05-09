@@ -15,10 +15,16 @@ import {
   type SigninAdapter,
   signinAdapterContext,
 } from "../../utils/signin-adapter.js";
-import { loadDriveApi, loadDrivePicker } from "./google-apis.js";
+import {
+  loadDriveApi,
+  loadDrivePicker,
+  loadDriveShare,
+} from "./google-apis.js";
 import { createRef, ref } from "lit/directives/ref.js";
 
 import * as BreadboardUI from "@breadboard-ai/shared-ui";
+import { ok } from "@google-labs/breadboard";
+import { Files } from "@breadboard-ai/google-drive-kit/board-server/api.js";
 const Strings = BreadboardUI.Strings.forSection("Global");
 
 const ASSET_MIME_TYPES = [
@@ -132,6 +138,16 @@ export class GoogleDriveDebugPanel extends LitElement {
 
       <br /><br />
 
+      <button @click=${this.#openSharingDialog}>Open sharing dialog</button>
+
+      <br /><br />
+
+      <button @click=${this.#listFolderContentsInConsole}>
+        List folder contents in console
+      </button>
+
+      <button @click=${this.#getFile}>Get file</button>
+
       <p>My projects</p>
       <ul>
         ${until(this.#renderUserBoards(), "Loading...")}
@@ -154,7 +170,7 @@ export class GoogleDriveDebugPanel extends LitElement {
     if (!server) {
       return nothing;
     }
-    const folderId = await server?.findOrCreateFolder();
+    const folderId = await server?.ops.findOrCreateFolder();
     return html`
       <a
         href="https://drive.google.com/corp/drive/folders/${folderId}"
@@ -182,7 +198,7 @@ export class GoogleDriveDebugPanel extends LitElement {
     if (!server) {
       return nothing;
     }
-    const fileIds = await server.listSharedBoards();
+    const fileIds = await server.ops.readSharedGraphList();
     return fileIds.map(
       (fileId) => html`<li>${this.#renderFileLink(fileId)}</li>`
     );
@@ -193,7 +209,7 @@ export class GoogleDriveDebugPanel extends LitElement {
     if (!server) {
       return nothing;
     }
-    const assets = await server.listAssets();
+    const assets = await server.ops.listAssets();
     return assets.map((fileId) => {
       return html`<li>${this.#renderFileLink(fileId)}</li>`;
     });
@@ -214,8 +230,8 @@ export class GoogleDriveDebugPanel extends LitElement {
     }
     const pickerLib = await loadDrivePicker();
     const view = new pickerLib.DocsView(google.picker.ViewId.DOCS);
-    view.setMimeTypes("application/json");
     view.setMode(google.picker.DocsViewMode.LIST);
+    view.setSelectFolderEnabled(true);
     // See https://developers.google.com/drive/picker/reference
     const picker = new pickerLib.PickerBuilder()
       .addView(view)
@@ -245,6 +261,7 @@ export class GoogleDriveDebugPanel extends LitElement {
     view.setMimeTypes("application/json");
     view.setFileIds(fileId);
     view.setMode(google.picker.DocsViewMode.GRID);
+    view.setSelectFolderEnabled(true);
 
     const overlay = document.createElement("bb-google-drive-picker-overlay");
     const underlay = document.createElement("bb-google-drive-picker-underlay");
@@ -278,6 +295,7 @@ export class GoogleDriveDebugPanel extends LitElement {
     picker.setVisible(true);
 
     let dialog, iframe;
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       dialog = document.body.querySelector("div.picker-dialog" as "div");
       iframe = dialog?.querySelector("iframe.picker-frame" as "iframe");
@@ -344,6 +362,7 @@ export class GoogleDriveDebugPanel extends LitElement {
     });
     const getResult = JSON.parse(getResponse.body) as {
       capabilities: { canShare: boolean };
+      // eslint-disable-next-line @typescript-eslint/ban-types
       permissions: {};
     };
     if (!getResult.capabilities.canShare) {
@@ -374,7 +393,10 @@ export class GoogleDriveDebugPanel extends LitElement {
     if (!server) {
       return nothing;
     }
-    const folderId = await server?.findOrCreateFolder();
+    const folderId = await server?.ops.findOrCreateFolder();
+    if (!ok(folderId)) {
+      return nothing;
+    }
     const pickerLib = await loadDrivePicker();
 
     // https://developers.google.com/workspace/drive/picker/reference/picker.docsuploadview.md
@@ -397,6 +419,65 @@ export class GoogleDriveDebugPanel extends LitElement {
       })
       .build();
     picker.setVisible(true);
+  }
+
+  async #openSharingDialog() {
+    const fileIds = this.#fileIdInput.value?.value;
+    if (!fileIds) {
+      return;
+    }
+    const driveShare = await loadDriveShare();
+    const auth = await this.signinAdapter?.refresh();
+    if (auth?.state !== "valid") {
+      return;
+    }
+    const client = new driveShare.ShareClient();
+    client.setOAuthToken(auth.grant.access_token);
+    const itemIds = fileIds.split(",");
+    client.setItemIds(itemIds);
+    client.showSettingsDialog();
+  }
+
+  async #listFolderContentsInConsole() {
+    const folderId = this.#fileIdInput.value?.value;
+    if (!folderId) {
+      return;
+    }
+
+    const drive = await loadDriveApi();
+    const auth = await this.signinAdapter?.refresh();
+    if (auth?.state !== "valid") {
+      return;
+    }
+    const { access_token } = auth.grant;
+    const response = await drive.files.list({
+      access_token,
+      q: `"${folderId}" in parents`,
+    });
+    const result = JSON.parse(response.body);
+    console.log({ result });
+  }
+
+  async #getFile() {
+    const fileId = this.#fileIdInput.value?.value;
+    if (!fileId) {
+      return;
+    }
+    const auth = await this.signinAdapter?.refresh();
+    if (auth?.state !== "valid") {
+      return;
+    }
+    const { access_token } = auth.grant;
+    const files = new Files(
+      { kind: "bearer", token: access_token },
+      new URL("/drive-proxy", document.location.href).href
+    );
+    const request = files.makeGetRequest(fileId);
+    console.log({ request });
+    const response = await fetch(request);
+    console.log({ status: response.status });
+    const text = await response.text();
+    console.log({ text });
   }
 }
 
@@ -491,12 +572,5 @@ export class GoogleDrivePickerOverlay extends LitElement {
       </div>
       <div id="line-hider"></div>
     `;
-  }
-}
-
-declare global {
-  interface HTMLElementTagNameMap {
-    "bb-google-drive-picker-underlay": GoogleDrivePickerUnderlay;
-    "bb-google-drive-picker-overlay": GoogleDrivePickerOverlay;
   }
 }

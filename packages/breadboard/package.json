@@ -3,7 +3,7 @@
   "publishConfig": {
     "registry": "https://wombat-dressing-room.appspot.com"
   },
-  "version": "0.33.0",
+  "version": "0.34.0",
   "description": "A library for rapid generative AI application prototyping",
   "main": "./dist/src/index.js",
   "exports": {
@@ -150,15 +150,15 @@
     "@typescript-eslint/parser": "^7.18.0",
     "ava": "^5.2.0",
     "jsonschema": "^1.5.0",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.3"
   },
   "engines": {
     "node": ">=20.14.0"
   },
   "dependencies": {
-    "@breadboard-ai/jsandbox": "0.5.0",
-    "@breadboard-ai/types": "0.6.0",
-    "@google-labs/breadboard-schema": "^1.13.0",
+    "@breadboard-ai/jsandbox": "0.6.0",
+    "@breadboard-ai/types": "0.7.0",
+    "@google-labs/breadboard-schema": "^1.14.0",
     "json-schema": "^0.4.0",
     "signal-utils": "^0.21.1"
   }

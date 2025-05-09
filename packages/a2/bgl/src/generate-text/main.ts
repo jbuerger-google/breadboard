@@ -8,6 +8,7 @@ import type { SharedContext } from "./types";
 import {
   createDoneTool,
   createKeepChattingTool,
+  createKeepChattingResult,
   type ChatTool,
 } from "./chat-tools";
 import { createSystemInstruction } from "./system-instruction";
@@ -47,6 +48,7 @@ class GenerateText {
   public description!: LLMContent;
   public context!: LLMContent[];
   public listMode = false;
+  #hasTools = false;
 
   constructor(public readonly sharedContext: SharedContext) {
     this.invoke = this.invoke.bind(this);
@@ -62,10 +64,10 @@ class GenerateText {
       sharedContext.params,
       async ({ path: url, instance }) => toolManager.addTool(url, instance)
     );
-    const hasTools = toolManager.hasTools();
+    this.#hasTools = toolManager.hasTools();
     if (sharedContext.chat) {
       toolManager.addCustomTool(doneTool.name, doneTool.handle());
-      if (!hasTools) {
+      if (!this.#hasTools) {
         toolManager.addCustomTool(
           keepChattingTool.name,
           keepChattingTool.handle()
@@ -89,6 +91,11 @@ class GenerateText {
     );
   }
 
+  addKeepChattingResult(context: LLMContent[]) {
+    context.push(createKeepChattingResult());
+    return context;
+  }
+
   /**
    * Invokes the text generator.
    * Significant mode flags:
@@ -96,6 +103,7 @@ class GenerateText {
    * - tools: boolean -- whether or not has tools
    * - makeList: boolean -- asked to generate a list
    * - isList: boolean -- is currently in list mode
+   * - model: string -- the model to generate with
    */
   async invoke(
     description: LLMContent,
@@ -114,14 +122,25 @@ class GenerateText {
     const safetySettings = defaultSafetySettings();
     const systemInstruction = this.createSystemInstruction(makeList);
     const tools = toolManager.list();
-    const inputs: GeminiInputs = { body: { contents, safetySettings } };
-    // We always supply tools when chatting, since we add
-    // the "Done" and "Keep Chatting" tools to figure out when
+    const inputs: GeminiInputs = {
+      body: { contents, safetySettings },
+      model: sharedContext.model,
+    };
+    // Unless it's a very first turn, we always supply tools when chatting,
+    // since we add the "Done" and "Keep Chatting" tools to figure out when
     // the conversation ends.
-    if (this.chat || toolManager.hasTools()) {
+    // In the first turn, we actually create fake "keep chatting" result,
+    // to help the LLM get into the rhythm. Like, "come on, LLM".
+    const firstTurn = this.firstTurn;
+    const shouldAddTools = (this.chat && !firstTurn) || this.#hasTools;
+    const shouldAddFakeResult = this.chat && firstTurn;
+    if (shouldAddTools) {
       inputs.body.tools = [...tools];
       inputs.body.toolConfig = { functionCallingConfig: { mode: "ANY" } };
     } else {
+      if (shouldAddFakeResult) {
+        this.addKeepChattingResult(contents);
+      }
       inputs.body.systemInstruction = systemInstruction;
     }
     // When we have tools, the first call will not try to make a list,
@@ -141,26 +160,51 @@ class GenerateText {
       if (doneTool.invoked) {
         return result.last;
       }
-      if (!keepChattingTool.invoked) {
-        contents.push(...result.all);
-      }
-      const inputs: GeminiInputs = {
-        body: { contents, systemInstruction, safetySettings },
-      };
-      if (makeList) {
-        inputs.body.generationConfig = {
-          responseSchema: listSchema(),
-          responseMimeType: "application/json",
-        };
-      }
-      const afterTools = await new GeminiPrompt(inputs).invoke();
-      if (!ok(afterTools)) return afterTools;
-      if (makeList && !this.chat) {
-        const list = toList(afterTools.last);
-        if (!ok(list)) return list;
-        product = list;
+      const invokedSubgraph = prompt.calledCustomTools;
+      if (invokedSubgraph) {
+        if (makeList && !this.chat) {
+          // This case might be unusual (making a list of images directly?),
+          // but handle it for completeness.
+          // TODO: support this case properly. This seems
+          const list = toList(result.last);
+          if (!ok(list)) return list;
+          product = list;
+        } else {
+          // Be careful to return subgraph output (which can be media) as-is
+          // without rewriting/summarizing it with gemini because gemini cannot generate media.
+          product = result.last;
+        }
       } else {
-        product = afterTools.last;
+        if (!keepChattingTool.invoked) {
+          contents.push(...result.all);
+        }
+        const inputs: GeminiInputs = {
+          body: { contents, systemInstruction, safetySettings },
+        };
+        if (shouldAddTools) {
+          // If we added function declarations (or saw a function call request) before, then we need to add them again so
+          // Gemini isn't confused by the presence of a function call request.
+          // However, set the mode to NONE so we don't call tools again.
+          inputs.body.tools = [...tools];
+          console.log("adding tools");
+          // Can't set to functionCallingConfig mode to NONE, as that seems to hallucinate tool use.
+        }
+        if (makeList) {
+          inputs.body.generationConfig = {
+            responseSchema: listSchema(),
+            responseMimeType: "application/json",
+          };
+        }
+        console.log("afterTools: ", inputs);
+        const afterTools = await new GeminiPrompt(inputs).invoke();
+        if (!ok(afterTools)) return afterTools;
+        if (makeList && !this.chat) {
+          const list = toList(afterTools.last);
+          if (!ok(list)) return list;
+          product = list;
+        } else {
+          product = afterTools.last;
+        }
       }
     } else {
       if (makeList && !this.chat) {
@@ -173,6 +217,10 @@ class GenerateText {
     }
 
     return product;
+  }
+
+  get firstTurn(): boolean {
+    return this.sharedContext.userInputs.length === 0;
   }
 
   get chat(): boolean {

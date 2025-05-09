@@ -109,7 +109,7 @@
     "rollup": "^4.39.0",
     "rollup-plugin-dts": "^6.2.1",
     "syncpack": "^13.0.3",
-    "typescript": "^5.8.2",
+    "typescript": "^5.8.3",
     "wireit": "^0.15.0-pre.2"
   },
   "workspaces": [
@@ -119,7 +119,7 @@
   ],
   "optionalDependencies": {
     "@rollup/rollup-darwin-arm64": "^4.37.0",
-    "@rollup/rollup-linux-x64-gnu": "^4.38.0"
+    "@rollup/rollup-linux-x64-gnu": "^4.40.2"
   },
   "dependencies": {
     "express": "^4.21.2",

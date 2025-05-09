@@ -203,14 +203,6 @@ export class SettingsStore implements BreadboardUI_Types.SettingsStore {
             value: false,
           },
         ],
-        [
-          "Show Assets in Graph",
-          {
-            name: "Show Assets in Graph",
-            description: "Toggles the visibility of Assets in the graph",
-            value: false,
-          },
-        ],
       ]),
     },
     [BreadboardUI_Types.SETTINGS_TYPE.SECRETS]: {
@@ -264,6 +256,14 @@ export class SettingsStore implements BreadboardUI_Types.SettingsStore {
 
   getItem(section: BreadboardUI_Types.SETTINGS_TYPE, name: string) {
     return this.#settings[section].items.get(name);
+  }
+
+  setItem(
+    section: BreadboardUI_Types.SETTINGS_TYPE,
+    name: string,
+    value: BreadboardUI_Types.SettingEntry["value"]
+  ) {
+    return this.#settings[section].items.set(name, value);
   }
 
   private constructor() {}

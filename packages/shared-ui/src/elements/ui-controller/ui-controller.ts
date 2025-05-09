@@ -71,6 +71,19 @@ import {
   createWorkspaceSelectionChangeId,
 } from "../../utils/workspace.js";
 import { icons } from "../../styles/icons.js";
+import {
+  type GoogleDriveSharePanel,
+  type GoogleDrivePicker,
+  EntityEditor,
+} from "../elements.js";
+import { consume } from "@lit/context";
+import {
+  type SigninAdapter,
+  signinAdapterContext,
+} from "../../utils/signin-adapter.js";
+import { findGoogleDriveAssetsInGraph } from "../google-drive/find-google-drive-assets-in-graph.js";
+import { loadDriveApi } from "../google-drive/google-apis.js";
+import { SharePanel } from "../share-panel/share-panel.js";
 
 const SIDE_ITEM_KEY = "bb-ui-controller-side-nav-item";
 
@@ -211,19 +224,22 @@ export class UI extends LitElement {
   accessor showAssetOrganizer = false;
 
   @state()
-  accessor autoFocusEditor = false;
-
-  @state()
   accessor #showEditHistory = false;
 
-  #autoFocusEditorOnRender = false;
+  @consume({ context: signinAdapterContext })
+  @property({ attribute: false })
+  accessor signinAdapter: SigninAdapter | undefined = undefined;
+
   #sideNavItem:
     | "activity"
     | "capabilities"
     | "edit-history"
     | "editor"
     | "app-view" = "editor";
+  #entityEditorRef: Ref<EntityEditor> = createRef();
   #moduleEditorRef: Ref<ModuleEditor> = createRef();
+  #sharePanelRef: Ref<SharePanel> = createRef();
+  #googleDriveAssetAccessPickerRef: Ref<GoogleDrivePicker> = createRef();
 
   static styles = [icons, uiControllerStyles];
 
@@ -243,9 +259,9 @@ export class UI extends LitElement {
 
   editorRender = 0;
   #preventAutoSwitchToEditor = false;
-  protected willUpdate(changedProperties: PropertyValues): void {
-    if (changedProperties.has("isShowingBoardActivityOverlay")) {
-      this.editorRender++;
+  protected willUpdate(changedProperties: PropertyValues<this>): void {
+    if (changedProperties.has("graph")) {
+      this.updateComplete.then(() => this.#checkGoogleDriveAssetsAreReadable());
     }
 
     if (changedProperties.has("selectionState")) {
@@ -267,11 +283,6 @@ export class UI extends LitElement {
           this.#moduleEditorRef.value.destroyEditor();
         }
       }
-    }
-
-    if (changedProperties.has("autoFocusEditor")) {
-      this.#autoFocusEditorOnRender = true;
-      this.autoFocusEditor = false;
     }
 
     let newSelectionCount = 0;
@@ -474,11 +485,7 @@ export class UI extends LitElement {
           .items.get("Enable Custom Step Creation")?.value
       : false;
 
-    const showAssetsInGraph = this.settings
-      ? this.settings
-          .getSection(SETTINGS_TYPE.GENERAL)
-          .items.get("Show Assets in Graph")?.value
-      : false;
+    const showAssetsInGraph = true;
 
     const graph = this.editor?.inspect("") || null;
     let capabilities: false | GraphProviderCapabilities = false;
@@ -541,6 +548,13 @@ export class UI extends LitElement {
           .readOnly=${this.readOnly}
           .showExperimentalComponents=${showExperimentalComponents}
           .topGraphResult=${this.topGraphResult}
+          @bbautofocuseditor=${() => {
+            if (!this.#entityEditorRef.value) {
+              return;
+            }
+
+            this.#entityEditorRef.value.focus();
+          }}
           @bbnodeconfigurationupdaterequest=${(
             evt: NodeConfigurationUpdateRequestEvent
           ) => {
@@ -549,7 +563,7 @@ export class UI extends LitElement {
             }
 
             this.sideNavItem = "editor";
-            this.autoFocusEditor = true;
+
             const newState = createEmptyWorkspaceSelectionState();
             const graphState = createEmptyGraphSelectionState();
             const graphId = evt.subGraphId ? evt.subGraphId : MAIN_BOARD_ID;
@@ -650,90 +664,6 @@ export class UI extends LitElement {
           this.sideNavItem,
         ],
         () => {
-          let topGraphResult = this.topGraphResult;
-          let isInSelectionState = false;
-          let showingOlderResult = false;
-          const mainBoardSelection =
-            this.selectionState?.selectionState.graphs.get(MAIN_BOARD_ID);
-          if (
-            mainBoardSelection &&
-            mainBoardSelection.nodes.size === 1 &&
-            this.topGraphResult
-          ) {
-            isInSelectionState = true;
-            topGraphResult = {
-              currentNode: structuredClone(this.topGraphResult.currentNode),
-              log: structuredClone(this.topGraphResult.log),
-              status: this.topGraphResult.status,
-            } as TopGraphRunResult;
-
-            const currentItem = [...mainBoardSelection.nodes][0];
-            if (currentItem) {
-              // Truncate the topGraphResult log to the end of the current
-              // item.
-              let currentItemId: string | null = null;
-              for (let i = 0; i < topGraphResult.log.length; i++) {
-                const entry = topGraphResult.log[i];
-                if (currentItemId !== null) {
-                  if (
-                    entry.type === "node" &&
-                    entry.descriptor.id !== currentItem
-                  ) {
-                    topGraphResult.log.length = i;
-                    break;
-                  }
-
-                  if (
-                    entry.type === "edge" &&
-                    entry.id?.startsWith(currentItemId)
-                  ) {
-                    // Include this edge value if it is an input.
-                    topGraphResult.log.length =
-                      entry.descriptor?.type === "input" ? i + 1 : i;
-                    break;
-                  }
-                }
-
-                if (entry.type !== "node") {
-                  continue;
-                }
-
-                if (entry.descriptor.id === currentItem) {
-                  currentItemId = entry.id;
-                  topGraphResult.currentNode = entry;
-                }
-              }
-
-              // If we are at the head of the topGraphResult just use whatever
-              // its status is. If it's earlier in the run then we decide
-              // based on the most recent item. If it's an open edge then we
-              // consider it to be running, otherwise it is paused.
-              if (topGraphResult.log.length < this.topGraphResult.log.length) {
-                showingOlderResult = true;
-                const newestItem = topGraphResult.log.at(-1);
-                if (newestItem?.type === "edge" && newestItem.end === null) {
-                  topGraphResult.status = "running";
-                } else {
-                  topGraphResult.status = "paused";
-                }
-              } else {
-                if (topGraphResult.currentNode?.descriptor.id !== currentItem) {
-                  // Tip of tree. Check to see if we've seen the currently
-                  // selected node. If not then this is a future node and we
-                  // should therefore remove the entire state.
-                  topGraphResult.currentNode = null;
-                  topGraphResult.log.length = 0;
-                  topGraphResult.status = "paused";
-                }
-              }
-            } else {
-              console.warn(
-                "Error with selection state",
-                this.selectionState?.selectionState
-              );
-            }
-          }
-
           return html`<bb-app-preview
             class=${classMap({
               active: this.sideNavItem === "app-view",
@@ -742,10 +672,10 @@ export class UI extends LitElement {
             .themeHash=${themeHash}
             .run=${run}
             .eventPosition=${eventPosition}
-            .topGraphResult=${topGraphResult}
+            .topGraphResult=${this.topGraphResult}
             .showGDrive=${this.signedIn}
-            .isInSelectionState=${isInSelectionState}
-            .showingOlderResult=${showingOlderResult}
+            .isInSelectionState=${false}
+            .showingOlderResult=${false}
             .settings=${this.settings}
             .boardServers=${this.boardServers}
             .status=${this.status}
@@ -758,10 +688,10 @@ export class UI extends LitElement {
         }
       )}`,
       html`<bb-entity-editor
+        ${ref(this.#entityEditorRef)}
         class=${classMap({
           active: this.sideNavItem === "editor",
         })}
-        .autoFocus=${this.#autoFocusEditorOnRender}
         .graph=${graph}
         .graphTopologyUpdateId=${this.graphTopologyUpdateId}
         .graphStore=${this.graphStore}
@@ -777,11 +707,14 @@ export class UI extends LitElement {
           active: this.sideNavItem === "activity",
         })}
       >
-        ${this.#renderEditHistoryButtons()}
-        ${this.#showEditHistory
-          ? this.#renderEditHistory()
-          : this.#renderActivity()}
+        ${this.#renderActivity()}
       </div>`,
+      html`<bb-edit-history-panel
+        class=${classMap({
+          active: this.sideNavItem === "edit-history",
+        })}
+        .history=${this.history}
+      ></bb-edit-history-panel>`,
     ];
 
     let assetOrganizer: HTMLTemplateResult | symbol = nothing;
@@ -858,25 +791,16 @@ export class UI extends LitElement {
                 : nothing}
 
               <button
-                id="share"
-                @click=${async () => {
-                  const url = await this.#deriveAppURL();
-                  if (!url) {
-                    return;
-                  }
-
-                  await navigator.clipboard.writeText(url.href);
-
-                  this.dispatchEvent(
-                    new ToastEvent(
-                      Strings.from("STATUS_COPIED_TO_CLIPBOARD"),
-                      ToastType.INFORMATION
-                    )
-                  );
+                ?disabled=${this.sideNavItem === "edit-history"}
+                @click=${() => {
+                  this.sideNavItem = "edit-history";
                 }}
+                aria-label="Edit History"
               >
-                URL
+                <span class="g-icon">history</span>
               </button>
+
+              <button id="share" @click=${this.#onClickShareButton}>URL</button>
             </div>
           </div>
           <div id="side-nav-content">${sideNavItem}</div>
@@ -885,11 +809,22 @@ export class UI extends LitElement {
       ${modules.length > 0 ? moduleEditor : nothing}
     `;
 
-    return graph
-      ? html`<section id="create-view">
-          ${assetOrganizer} ${contentContainer}
-        </section>`
-      : html`<section id="content" class="welcome">${graphEditor}</section>`;
+    return [
+      graph
+        ? html`<section id="create-view">
+            ${assetOrganizer} ${contentContainer}
+          </section>`
+        : html`<section id="content" class="welcome">${graphEditor}</section>`,
+      html`
+        <bb-share-panel .graph=${this.graph} ${ref(this.#sharePanelRef)}>
+        </bb-share-panel>
+        <bb-google-drive-picker
+          ${ref(this.#googleDriveAssetAccessPickerRef)},
+          mode="pick-shared-assets"
+        >
+        </bb-google-drive-picker>
+      `,
+    ];
   }
 
   updated() {
@@ -923,5 +858,87 @@ export class UI extends LitElement {
         .history=${this.history}
       ></bb-edit-history-panel>
     `;
+  }
+
+  async #onClickShareButton() {
+    const graphUrl = this.graph?.url ? new URL(this.graph.url) : null;
+    if (!graphUrl) {
+      return;
+    }
+    if (graphUrl.protocol === "drive:") {
+      this.openSharePanel();
+      return;
+    }
+
+    const appUrl = await this.#deriveAppURL();
+    if (!appUrl) {
+      return;
+    }
+    await navigator.clipboard.writeText(appUrl.href);
+    this.dispatchEvent(
+      new ToastEvent(
+        Strings.from("STATUS_COPIED_TO_CLIPBOARD"),
+        ToastType.INFORMATION
+      )
+    );
+  }
+
+  openSharePanel() {
+    this.#sharePanelRef?.value?.open();
+  }
+
+  async #checkGoogleDriveAssetsAreReadable() {
+    if (!this.graph) {
+      return;
+    }
+    const driveAssetFileIds = findGoogleDriveAssetsInGraph(this.graph);
+    if (driveAssetFileIds.length === 0) {
+      return;
+    }
+    const drive = await loadDriveApi();
+    const auth = await this.signinAdapter?.refresh();
+    if (auth?.state !== "valid") {
+      console.error(`Expected "valid" auth state, got "${auth?.state}"`);
+      return;
+    }
+    const needsPicking: string[] = [];
+    await Promise.all(
+      driveAssetFileIds.map(async (fileId) => {
+        try {
+          await drive.files.get({
+            access_token: auth.grant.access_token,
+            fileId,
+          });
+        } catch (error) {
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "status" in error &&
+            error.status === 404
+          ) {
+            needsPicking.push(fileId);
+          } else {
+            console.error(
+              "Unhandled error checking drive asset readability:",
+              error
+            );
+          }
+        }
+      })
+    );
+    if (needsPicking.length > 0) {
+      const picker = this.#googleDriveAssetAccessPickerRef.value;
+      if (picker) {
+        picker.fileIds = needsPicking;
+        picker.open();
+        picker.addEventListener(
+          "close",
+          () => {
+            picker.fileIds = [];
+          },
+          { once: true }
+        );
+      }
+    }
   }
 }

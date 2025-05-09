@@ -14,6 +14,13 @@ import { ok, err, toLLMContent, addUserTurn } from "./utils";
 
 export { GeminiPrompt };
 
+type FunctionResponsePart = {
+  functionResponse: {
+    name: string;
+    response: object;
+  };
+};
+
 function textToJson(content: LLMContent): LLMContent {
   return {
     ...content,
@@ -63,6 +70,9 @@ class GeminiPrompt {
   readonly options: GeminiPromptOptions;
 
   calledTools: boolean = false;
+  // Useful for detecting if subgraphs were invoked, based on whether a tool was invoked with
+  // 'passContext' set to true.
+  calledCustomTools: boolean = false;
 
   constructor(
     public readonly inputs: GeminiInputs,
@@ -108,6 +118,7 @@ class GeminiPrompt {
 
   async invoke(): Promise<Outcome<GeminiPromptOutput>> {
     this.calledTools = false;
+    this.calledCustomTools = false;
     const { allowToolErrors, validator } = this.options;
     const invoking = await gemini(this.inputs);
     if (!ok(invoking)) return invoking;
@@ -132,24 +143,59 @@ class GeminiPrompt {
     }
     await this.options.toolManager?.processResponse(
       content,
-      async ($board, args, passContext) => {
+      async ($board, args, passContext, functionName) => {
         console.log("CALLING TOOL", $board, args, passContext);
         this.calledTools = true;
+        if (passContext) {
+          // Passing context means we called a subgraph/'custom tool'.
+          this.calledCustomTools = true;
+        }
         const callingTool = await invokeBoard({
           $board,
           ...this.#normalizeArgs(args, passContext),
         });
         if ("$error" in callingTool) {
           errors.push(JSON.stringify(callingTool.$error));
+        } else if (functionName === undefined) {
+          errors.push(`No function name for ${JSON.stringify(callingTool)}`);
         } else {
           if (passContext) {
             if (!("context" in callingTool)) {
               errors.push(`No "context" port in outputs of "${$board}"`);
             } else {
-              results.push(callingTool.context as LLMContent[]);
+              const response = {
+                ["value"]: JSON.stringify(callingTool.context as LLMContent[]),
+              };
+              const responsePart: FunctionResponsePart = {
+                functionResponse: {
+                  name: functionName,
+                  response: response,
+                },
+              };
+              const toolResponseContent: LLMContent = {
+                role: "user",
+                parts: [responsePart],
+              };
+              results.push([toolResponseContent]);
+              console.log(
+                "gemini-prompt + passContext, processResponse: ",
+                results
+              );
             }
           } else {
-            results.push([toLLMContent(JSON.stringify(callingTool))]);
+            const responsePart: FunctionResponsePart = {
+              functionResponse: {
+                name: functionName,
+                response: callingTool,
+              },
+            };
+            const toolResponseContent: LLMContent = {
+              role: "user",
+              parts: [responsePart],
+            };
+            console.log("toolResponseContent: ", toolResponseContent);
+            results.push([toolResponseContent]);
+            console.log("gemini-prompt processResponse: ", results);
           }
         }
       }
@@ -162,10 +208,12 @@ class GeminiPrompt {
     }
     const isJSON =
       this.inputs.body.generationConfig?.responseMimeType == "application/json";
+    console.log("gemini-prompt before : ", content);
     const result = isJSON ? [textToJson(content)] : [content];
     if (results.length) {
       result.push(mergeLastParts(results));
     }
+    console.log("gemini-prompt pushed mergeLastParts: ", result);
     return { all: result, last: result.at(-1)!, candidate };
   }
 }

@@ -6,12 +6,14 @@
 
 import type { GraphProviderItem } from "@google-labs/breadboard";
 import { consume } from "@lit/context";
-import { css, html, LitElement, nothing } from "lit";
+import { css, html, HTMLTemplateResult, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import {
+  BoardDeleteEvent,
   GraphBoardServerLoadRequestEvent,
   GraphBoardServerRemixRequestEvent,
+  OverflowMenuActionEvent,
 } from "../../events/events.js";
 import * as StringsHelper from "../../strings/helper.js";
 import { icons } from "../../styles/icons.js";
@@ -20,11 +22,16 @@ import {
   signinAdapterContext,
 } from "../../utils/signin-adapter.js";
 import { keyed } from "lit/directives/keyed.js";
+import { styleMap } from "lit/directives/style-map.js";
+import { OverflowAction } from "../../types/types.js";
 
 const Strings = StringsHelper.forSection("ProjectListing");
 
 @customElement("bb-gallery")
 export class Gallery extends LitElement {
+  @property()
+  accessor showOverflowMenu = false;
+
   static readonly styles = [
     icons,
     css`
@@ -49,6 +56,11 @@ export class Gallery extends LitElement {
         :host {
           --items-per-column: 2;
         }
+      }
+
+      bb-overflow-menu {
+        position: fixed;
+        right: auto;
       }
 
       #boards {
@@ -85,6 +97,13 @@ export class Gallery extends LitElement {
         border-bottom: var(--border);
         /* Matches the color of the placeholder background */
         background-color: #ebf5ff;
+
+        &.default {
+          background-color: var(--bb-neutral-0);
+          object-fit: contain;
+          box-sizing: border-box;
+          padding: var(--bb-grid-size-8);
+        }
       }
 
       .details {
@@ -97,6 +116,13 @@ export class Gallery extends LitElement {
 
       .creator {
         display: flex;
+        justify-content: space-between;
+
+        > span {
+          display: flex;
+          align-items: center;
+        }
+
         .pic {
           display: inline-flex;
           .signed-in {
@@ -118,6 +144,29 @@ export class Gallery extends LitElement {
           margin: 0 0 0 8px;
           display: inline-flex;
           align-items: center;
+        }
+
+        .overflow-menu {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: var(--bb-neutral-0);
+          padding: 0;
+          border: none;
+          transition: background-color 0.2s cubic-bezier(0, 0, 0.3, 1);
+
+          > * {
+            pointer-events: none;
+          }
+
+          &:not([disabled]) {
+            cursor: pointer;
+
+            &:hover,
+            &:focus {
+              background-color: var(--bb-neutral-50);
+            }
+          }
         }
       }
 
@@ -245,6 +294,8 @@ export class Gallery extends LitElement {
     `,
   ];
 
+  #overflowMenuConfig: { x: number; y: number; value: string } | null = null;
+
   @consume({ context: signinAdapterContext })
   accessor signinAdapter: SigninAdapter | undefined = undefined;
 
@@ -272,16 +323,63 @@ export class Gallery extends LitElement {
             (this.page + 1) * pageSize
           )
         : (this.items ?? []);
+
+    let boardOverflowMenu: HTMLTemplateResult | symbol = nothing;
+    if (this.showOverflowMenu && this.#overflowMenuConfig) {
+      const actions: OverflowAction[] = [
+        {
+          title: Strings.from("COMMAND_DELETE"),
+          name: "delete",
+          icon: "delete",
+          value: this.#overflowMenuConfig.value,
+        },
+      ];
+
+      boardOverflowMenu = html`<bb-overflow-menu
+        id="board-overflow"
+        style=${styleMap({
+          left: `${this.#overflowMenuConfig.x}px`,
+          top: `${this.#overflowMenuConfig.y}px`,
+        })}
+        .actions=${actions}
+        .disabled=${false}
+        @bboverflowmenudismissed=${() => {
+          this.showOverflowMenu = false;
+        }}
+        @bboverflowmenuaction=${async (actionEvt: OverflowMenuActionEvent) => {
+          this.showOverflowMenu = false;
+          if (!this.#overflowMenuConfig) {
+            return;
+          }
+
+          switch (actionEvt.action) {
+            case "delete": {
+              this.dispatchEvent(
+                new BoardDeleteEvent(this.#overflowMenuConfig.value)
+              );
+              break;
+            }
+          }
+
+          this.#overflowMenuConfig = null;
+        }}
+      ></bb-overflow-menu>`;
+    }
+
     return html`
       <div id="boards">${pageItems.map((item) => this.#renderBoard(item))}</div>
-      ${this.#renderPagination()}
+      ${this.#renderPagination()} ${boardOverflowMenu}
     `;
   }
 
   #renderBoard([name, item]: [string, GraphProviderItem]) {
     const { url, mine, title, description, thumbnail } = item;
+    // TODO: Replace this with a more robust check. The theme does include this
+    // information but the board server logic doesn't currently expose it.
+    const isDefaultTheme = thumbnail?.startsWith("data:") ?? false;
     return html`
-      <button
+      <div
+        aria-role="button"
         class=${classMap({ board: true, mine })}
         tabindex="0"
         @click=${(event: PointerEvent) => this.#onBoardClick(event, url)}
@@ -290,14 +388,44 @@ export class Gallery extends LitElement {
         ${keyed(
           thumbnail,
           html`<img
-            class="thumbnail"
+            class=${classMap({ thumbnail: true, default: isDefaultTheme })}
             src=${thumbnail ?? "/images/placeholder.svg"}
           />`
         )}
         <div class="details">
           <div class="creator">
-            <span class="pic">${this.#renderCreatorImage(item)}</span>
-            <span class="name">by ${this.#renderCreatorName(item)}</span>
+            <span>
+              <span class="pic">${this.#renderCreatorImage(item)}</span>
+              <span class="name">by ${this.#renderCreatorName(item)}</span>
+            </span>
+            ${mine
+              ? html`<button
+                  class="overflow-menu"
+                  @click=${(evt: Event) => {
+                    evt.preventDefault();
+                    evt.stopImmediatePropagation();
+
+                    if (!(evt.target instanceof HTMLButtonElement)) {
+                      return;
+                    }
+
+                    const bounds = evt.target.getBoundingClientRect();
+                    let x = bounds.x;
+                    if (x + 144 > window.innerWidth) {
+                      x = window.innerWidth - 144;
+                    }
+
+                    this.#overflowMenuConfig = {
+                      x,
+                      y: bounds.bottom,
+                      value: url,
+                    };
+                    this.showOverflowMenu = true;
+                  }}
+                >
+                  <span class="g-icon">more_vert</span>
+                </button>`
+              : nothing}
           </div>
           <h4 class="title">${title ?? name}</h4>
           <p class="description">${description ?? "No description"}</p>
@@ -317,7 +445,7 @@ export class Gallery extends LitElement {
                 </div>
               `}
         </div>
-      </button>
+      </div>
     `;
   }
 

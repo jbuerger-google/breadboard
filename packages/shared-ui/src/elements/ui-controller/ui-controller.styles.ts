@@ -624,6 +624,7 @@ export const styles = css`
         display: flex;
         align-items: flex-start;
         cursor: pointer;
+        white-space: nowrap;
 
         &[disabled] {
           color: var(--bb-neutral-900);
@@ -666,7 +667,7 @@ export const styles = css`
     }
 
     & #side-nav-content {
-      height: 100%;
+      height: calc(100% - var(--bb-grid-size-11));
 
       & bb-entity-editor {
         position: relative;

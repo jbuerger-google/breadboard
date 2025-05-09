@@ -63,7 +63,31 @@ export async function getBoardServers(
       }
 
       if (url.startsWith(GoogleDriveBoardServer.PROTOCOL) && tokenVendor) {
-        return GoogleDriveBoardServer.from(url, title, user, tokenVendor);
+        const googleDrivePublicApiKey = import.meta.env
+          .VITE_GOOGLE_DRIVE_PUBLIC_API_KEY;
+        if (!googleDrivePublicApiKey) {
+          console.warn(
+            "No value for VITE_GOOGLE_DRIVE_PUBLIC_API_KEY was configured." +
+              " We will not be able to read public files from Google Drive."
+          );
+        }
+        const googleDriveFeaturedGalleryFolderId = import.meta.env
+          .VITE_GOOGLE_DRIVE_FEATURED_GALLERY_FOLDER_ID;
+        if (!googleDrivePublicApiKey) {
+          console.warn(
+            "No value for VITE_GOOGLE_DRIVE_FEATURED_GALLERY_FOLDER_ID" +
+              " was configured. We will not be able to read the featured" +
+              " gallery from Google Drive."
+          );
+        }
+        return GoogleDriveBoardServer.from(
+          url,
+          title,
+          user,
+          tokenVendor,
+          googleDrivePublicApiKey,
+          googleDriveFeaturedGalleryFolderId
+        );
       }
 
       console.warn(`Unsupported store URL: ${url}`);

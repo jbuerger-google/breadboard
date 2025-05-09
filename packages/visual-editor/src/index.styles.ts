@@ -212,6 +212,55 @@ export const styles = css`
     height: 100%;
   }
 
+  #tos-dialog {
+    max-width: 640px;
+    border-radius: var(--bb-grid-size-4);
+    padding: var(--bb-grid-size-5);
+    border: none;
+
+    form {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      width: 100%;
+      margin: auto;
+    }
+
+    .heading {
+      margin-top: 0;
+      padding-bottom: var(--bb-grid-size-3);
+      border-bottom: 2px solid #eee;
+    }
+
+    .tos-content {
+      flex-grow: 1;
+      overflow-y: auto;
+      max-height: 320px;
+    }
+
+    .consent-section {
+      margin-top: 20px;
+      border-top: 2px solid #eee;
+      padding-top: var(--bb-grid-size-4);
+      padding-right: var(--bb-grid-size-2);
+    }
+
+    .button-section {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    button {
+      padding: var(--bb-grid-size-2);
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+      background-color: var(--bb-ui-600);
+      color: white;
+
+    }
+  }
+
   #header-bar {
     display: flex;
     align-items: center;
@@ -324,6 +373,10 @@ export const styles = css`
         }
       }
     }
+
+    & bb-homepage-search-button {
+      margin-right: var(--bb-grid-size-8);
+    }
   }
 
   #header-bar[data-active="true"] h1::after {
@@ -370,6 +423,7 @@ export const styles = css`
     margin-bottom: 2px;
     color: var(--bb-neutral-700);
     white-space: nowrap;
+    margin-right: var(--bb-grid-size-2);
   }
 
   .save-status {
@@ -447,16 +501,6 @@ export const styles = css`
 
   :host([showboardactivityoverlay="true"]) bb-board-activity-overlay {
     display: block;
-  }
-
-  bb-command-palette {
-    position: absolute;
-    top: calc(var(--bb-grid-size-2) + 92px);
-    left: 50%;
-    width: 75%;
-    max-width: 650px;
-    transform: translateX(-50%);
-    z-index: 6;
   }
 
   #user-overflow,

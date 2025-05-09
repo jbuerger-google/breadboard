@@ -17,6 +17,9 @@ export class AddAssetModal extends LitElement {
   @property()
   accessor assetType: string | null = null;
 
+  @property()
+  accessor allowedMimeTypes: string | null = null;
+
   static styles = css`
     * {
       box-sizing: border-box;
@@ -66,11 +69,11 @@ export class AddAssetModal extends LitElement {
       & input[type="text"],
       & input[type="url"],
       & input[type="number"],
-      & input[type="file"] & textarea,
+      & input[type="file"],
+      & textarea,
       & select {
         display: block;
         width: 100%;
-        min-width: 320px;
         border-radius: var(--bb-grid-size);
         background: var(--background-color, var(--bb-neutral-0));
         color: var(--text-color, var(--bb-neutral-900));
@@ -79,6 +82,18 @@ export class AddAssetModal extends LitElement {
         resize: none;
         font: 400 var(--bb-body-small) / var(--bb-body-line-height-small)
           var(--bb-font-family);
+      }
+
+      & input[type="file"] {
+        display: none;
+      }
+
+      & #uploading {
+        display: flex;
+        align-items: center;
+        height: var(--bb-grid-size-8);
+        padding-left: var(--bb-grid-size-8);
+        background: var(--bb-progress) 4px center / 20px 20px no-repeat;
       }
 
       input::file-selector-button {
@@ -123,6 +138,7 @@ export class AddAssetModal extends LitElement {
     }
   `;
 
+  #inputRef: Ref<HTMLDivElement> = createRef();
   #containerRef: Ref<HTMLDivElement> = createRef();
   #addDriveInputRef: Ref<GoogleDriveFileId> = createRef();
 
@@ -252,6 +268,14 @@ export class AddAssetModal extends LitElement {
     this.dispatchEvent(new AddAssetEvent(item));
   }
 
+  protected updated(): void {
+    if (!this.#inputRef.value) {
+      return;
+    }
+
+    this.#inputRef.value.click();
+  }
+
   render() {
     if (!this.assetType) {
       return nothing;
@@ -259,13 +283,23 @@ export class AddAssetModal extends LitElement {
 
     let title: HTMLTemplateResult | symbol = nothing;
     let assetCollector: HTMLTemplateResult | symbol = nothing;
+    let assetDone: HTMLTemplateResult | symbol = html`<div>
+      <button
+        @click=${() => {
+          this.#processAndEmit();
+        }}
+      >
+        Done
+      </button>
+    </div>`;
+
     switch (this.assetType) {
       case "youtube":
         title = html`Add YouTube Video`;
         assetCollector = html`<input
           type="url"
           placeholder="https://www.youtube.com/watch?v=<video>"
-          pattern="^https://www.youtube.com/(watch|embed).*"
+          pattern="^https://www.youtube.com/(watch|embed|shorts).*"
         />`;
         break;
 
@@ -274,8 +308,18 @@ export class AddAssetModal extends LitElement {
         assetCollector = html`<input
           type="file"
           required
-          accept="image/*,audio/*,text/plain"
+          accept=${this.allowedMimeTypes
+            ? this.allowedMimeTypes
+            : "image/*,audio/*,video/*,text/plain,application/pdf,text/csv"}
+          ${ref(this.#inputRef)}
+          @change=${() => {
+            this.#processAndEmit();
+          }}
+          @cancel=${() => {
+            this.dispatchEvent(new OverlayDismissedEvent());
+          }}
         />`;
+        assetDone = html`<div id="uploading">Uploading</div>`;
         break;
 
       case "drawable":
@@ -323,16 +367,7 @@ export class AddAssetModal extends LitElement {
         }}
       >
         <h1>${title}</h1>
-        ${assetCollector}
-        <div>
-          <button
-            @click=${() => {
-              this.#processAndEmit();
-            }}
-          >
-            Done
-          </button>
-        </div>
+        ${assetCollector} ${assetDone}
       </div>
     </div>`;
   }

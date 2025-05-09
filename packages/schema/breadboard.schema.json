@@ -1,5 +1,5 @@
 {
-	"$id": "https://raw.githubusercontent.com/breadboard-ai/breadboard/@google-labs/breadboard-schema@1.13.0/packages/schema/breadboard.schema.json",
+	"$id": "https://raw.githubusercontent.com/breadboard-ai/breadboard/@google-labs/breadboard-schema@1.14.0/packages/schema/breadboard.schema.json",
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$ref": "#/definitions/GraphDescriptor",
 	"definitions": {
@@ -489,6 +489,10 @@
 				"userModified": {
 					"type": "boolean",
 					"description": "If true, the title/description have been modified by the user."
+				},
+				"start": {
+					"type": "boolean",
+					"description": "If true, indicates that this node is marked as a starting node. This indicator is informative: it does not mean that the run starts with this node. Instead, when this node is both:  a) standalone (no ins/outs)  b) first among others with this flag Then, it will be chosen as a starting node."
 				}
 			},
 			"additionalProperties": false,
@@ -566,6 +570,9 @@
 				},
 				"splashScreen": {
 					"$ref": "#/definitions/StoredDataCapabilityPart"
+				},
+				"isDefaultTheme": {
+					"type": "boolean"
 				}
 			},
 			"additionalProperties": false

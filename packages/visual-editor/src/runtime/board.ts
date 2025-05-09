@@ -8,6 +8,7 @@ import {
   BoardServer,
   BoardServerExtension,
   BoardServerExtensionNamespace,
+  BoardServerSaveEventStatus,
   createLoader,
   EditHistoryCreator,
   EditHistoryEntry,
@@ -30,6 +31,7 @@ import {
   RuntimeTabCloseEvent,
   RuntimeBoardServerChangeEvent,
   RuntimeWorkspaceItemChangeEvent,
+  RuntimeBoardSaveStatusChangeEvent,
 } from "./events";
 import * as BreadboardUI from "@breadboard-ai/shared-ui";
 import {
@@ -45,6 +47,7 @@ import {
   NodeDescriptor,
 } from "@breadboard-ai/types";
 import * as idb from "idb";
+import { BOARD_SAVE_STATUS } from "@breadboard-ai/shared-ui/types/types.js";
 
 const documentStyles = getComputedStyle(document.documentElement);
 
@@ -89,6 +92,16 @@ export class Board extends EventTarget {
     private readonly tokenVendor?: TokenVendor
   ) {
     super();
+    boardServers.servers.forEach((server) => {
+      if (server.capabilities.events) {
+        // install event listeners
+        server.addEventListener("savestatuschange", ({ url, status }) => {
+          this.dispatchEvent(
+            new RuntimeBoardSaveStatusChangeEvent(toSaveStatus(status), url)
+          );
+        });
+      }
+    });
   }
 
   #canParse(url: string, base?: string) {
@@ -193,20 +206,6 @@ export class Board extends EventTarget {
     return (
       this.boardServers.servers.find((server) => server.name === name) || null
     );
-  }
-
-  /**
-   * @deprecated Use getBoardServerByName instead.
-   */
-  getProviderByName(name: string) {
-    return this.providers.find((provider) => provider.name === name) || null;
-  }
-
-  /**
-   * @deprecated Use getBoardServerForURL instead.
-   */
-  getProviderForURL(url: URL) {
-    return this.providers.find((provider) => provider.canProvide(url)) || null;
   }
 
   getBoardServerForURL(url: URL) {
@@ -564,6 +563,7 @@ export class Board extends EventTarget {
       mainGraphId: mainGraphId.result,
       graph: descriptor,
       subGraphId: null,
+      boardServer: null,
       moduleId,
       version: 1,
       type: TabType.DESCRIPTOR,
@@ -615,6 +615,7 @@ export class Board extends EventTarget {
       graph: descriptor,
       mainGraphId: mainGraphId.result,
       subGraphId: null,
+      boardServer: null,
       moduleId,
       version: 1,
       type: TabType.DESCRIPTOR,
@@ -653,8 +654,8 @@ export class Board extends EventTarget {
 
       const graphTheme: GraphTheme = {
         themeColors: {
-          primaryColor: "#246db5",
-          secondaryColor: "#5cadff",
+          primaryColor: "#1a1a1a",
+          secondaryColor: "#7a7a7a",
           backgroundColor: "#ffffff",
           textColor: "#1a1a1a",
           primaryTextColor: "#ffffff",
@@ -662,10 +663,11 @@ export class Board extends EventTarget {
         template: "basic",
         splashScreen: {
           storedData: {
-            handle: "/images/app/generic-flow.jpg",
-            mimeType: "image/jpeg",
+            handle: MAIN_ICON,
+            mimeType: "image/svg+xml",
           },
         },
+        isDefaultTheme: true,
       };
 
       const themeId = globalThis.crypto.randomUUID();
@@ -712,7 +714,7 @@ export class Board extends EventTarget {
     moduleId: ModuleIdentifier | null = null,
     subGraphId: GraphIdentifier | null = null,
     creator: EditHistoryCreator | null = null
-  ) {
+  ): Promise<void> {
     const url = this.#makeRelativeToCurrentBoard(boardUrl, currentUrl);
     if (!url) {
       return;
@@ -720,11 +722,12 @@ export class Board extends EventTarget {
 
     try {
       const base = new URL(window.location.href);
+      let boardServer: BoardServer | null = null;
 
       let kits = this.boardServerKits;
       let graph: GraphDescriptor | null = null;
       if (this.#canParse(url, base.href)) {
-        const boardServer = this.getBoardServerForURL(new URL(url, base));
+        boardServer = this.getBoardServerForURL(new URL(url, base));
         if (boardServer) {
           // Ensure the the provider has actually loaded fully before
           // requesting the graph file from it.
@@ -741,8 +744,53 @@ export class Board extends EventTarget {
       }
 
       if (!graph) {
-        this.dispatchEvent(new RuntimeErrorEvent("Unable to load board"));
-        return;
+        const urlObj = new URL(url);
+        if (urlObj.protocol === "drive:") {
+          // If we can't load a Google Drive board, it's likely that the user
+          // needs to "pick" it so that it's visible to our application (this is
+          // an expected byproduct of using the drive.file OAuth scope).
+          const picker = document.createElement("bb-google-drive-picker");
+          picker.mode = "pick-shared-board";
+          picker.fileIds = [urlObj.pathname.replace(/^\/+/, "")];
+
+          // Note we must put the picker in <bb-main>, because we need access to
+          // a SigninAdapter which is provided via a Lit context provided there.
+          const main = document.body.querySelector("bb-main");
+          if (!main) {
+            console.error("Could not find <bb-main>");
+            return;
+          }
+          // TODO(aomarks) It would be better if this was a method on main,
+          // since it breaks encapsulation, and if we're not careful we could
+          // step on Lit's toes a bit. In practice, this works fine for now,
+          // especially because we remove the element after the picker closes so
+          // Lit shouldn't even notice anything happened.
+          if (!main.shadowRoot) {
+            console.error("<bb-main> did not have a shadowRoot");
+            return;
+          }
+          main.shadowRoot.appendChild(picker);
+
+          picker.open();
+          await new Promise<void>((resolve) => {
+            picker.addEventListener("close", () => resolve());
+          });
+          picker.remove();
+          // Try again!
+          return this.createTabFromURL(
+            boardUrl,
+            currentUrl,
+            _createNewTab,
+            readOnly,
+            dispatchTabChangeEvent,
+            moduleId,
+            subGraphId,
+            creator
+          );
+        } else {
+          this.dispatchEvent(new RuntimeErrorEvent("Unable to load board"));
+          return;
+        }
       }
 
       // Check to see if this is an imperative grpah
@@ -774,7 +822,8 @@ export class Board extends EventTarget {
       if (!mainGraphId.success) {
         throw new Error(`Unable to add graph: ${mainGraphId.error}`);
       }
-      const id = this.#currentTabId || globalThis.crypto.randomUUID();
+      // Always create a new tab.
+      const id = globalThis.crypto.randomUUID();
       this.#tabs.set(id, {
         id,
         boardServerKits: kits,
@@ -783,6 +832,7 @@ export class Board extends EventTarget {
         mainGraphId: mainGraphId.result,
         subGraphId,
         moduleId,
+        boardServer,
         type: TabType.URL,
         version: 1,
         readOnly,
@@ -790,6 +840,12 @@ export class Board extends EventTarget {
         history: await this.#loadLocalHistory(url),
         onHistoryChanged: (history) => this.#saveLocalHistory(url, history),
       });
+
+      // If there's a current tab, close it.
+      // We are in a single-tab environment for now.
+      if (this.#currentTabId) {
+        this.closeTab(this.#currentTabId);
+      }
 
       this.#currentTabId = id;
 
@@ -931,7 +987,7 @@ export class Board extends EventTarget {
     return boardServer.capabilities.preview;
   }
 
-  async save(id: TabId | null) {
+  async save(id: TabId | null, userInitiated: boolean) {
     if (!id) {
       return { result: false, error: "Unable to save" };
     }
@@ -968,7 +1024,7 @@ export class Board extends EventTarget {
       };
     }
 
-    return boardServer.save(boardUrl, tab.graph);
+    return boardServer.save(boardUrl, tab.graph, userInitiated);
   }
 
   async saveAs(
@@ -1137,4 +1193,25 @@ export class Board extends EventTarget {
       }
     );
   }
+}
+
+function toSaveStatus(status: BoardServerSaveEventStatus): BOARD_SAVE_STATUS {
+  let result;
+
+  switch (status) {
+    case "saving":
+      result = BreadboardUI.Types.BOARD_SAVE_STATUS.SAVING;
+      break;
+    case "idle":
+      result = BreadboardUI.Types.BOARD_SAVE_STATUS.SAVED;
+      break;
+    case "debouncing":
+    case "queued":
+      result = BreadboardUI.Types.BOARD_SAVE_STATUS.UNSAVED;
+      break;
+    default:
+      result = BreadboardUI.Types.BOARD_SAVE_STATUS.SAVED;
+      break;
+  }
+  return result;
 }

@@ -43,11 +43,11 @@ import {
 } from "../../events/events";
 import { repeat } from "lit/directives/repeat.js";
 import { createRef, ref, Ref } from "lit/directives/ref.js";
-import { NodeValue, OutputValues } from "@breadboard-ai/types";
+import { LLMContent, NodeValue, OutputValues } from "@breadboard-ai/types";
 import { isLLMContentArrayBehavior, isLLMContentBehavior } from "../../utils";
 import { extractError } from "../shared/utils/utils";
 import { AssetShelf } from "../../elements/elements";
-import { SigninState } from "../../utils/signin-adapter";
+import { SIGN_IN_CONNECTION_ID, SigninState } from "../../utils/signin-adapter";
 
 /** Included so the app can be standalone */
 import "../../elements/input/add-asset/add-asset-button.js";
@@ -62,6 +62,7 @@ import "../../elements/output/llm-output/llm-output.js";
 import "../../elements/output/multi-output/multi-output.js";
 import { map } from "lit/directives/map.js";
 import { markdown } from "../../directives/markdown";
+import { maybeConvertToYouTube } from "../../utils/substitute-input";
 
 @customElement("app-basic")
 export class Template extends LitElement implements AppTemplate {
@@ -114,6 +115,7 @@ export class Template extends LitElement implements AppTemplate {
   @state()
   accessor showAddAssetModal = false;
   #addAssetType: string | null = null;
+  #allowedMimeTypes: string | null = null;
 
   get additionalOptions() {
     return {
@@ -270,10 +272,10 @@ export class Template extends LitElement implements AppTemplate {
 
             &::before {
               content: "";
-              width: 100%;
+              width: var(--splash-width, 100%);
               flex: 1;
-              background: var(--splash-image, url(/images/app/generic-flow.jpg))
-                center center / cover no-repeat;
+              background: var(--splash-image, var(--bb-logo)) center center /
+                var(--splash-fill, cover) no-repeat;
               mask-image: linear-gradient(
                 to bottom,
                 rgba(255, 0, 255, 1) 0%,
@@ -287,8 +289,8 @@ export class Template extends LitElement implements AppTemplate {
             & h1 {
               background: var(--background-color, none);
               border-radius: var(--bb-grid-size-2);
-              font: 500 var(--font-style) 32px / 42px var(--font-family);
-              color: var(--primary-color, var(--bb-neutral-700));
+              font: 400 var(--font-style) 32px / 42px var(--font-family);
+              color: var(--text-color, var(--bb-neutral-700));
               margin: 0 0 var(--bb-grid-size-3);
               flex: 0 0 auto;
               max-width: 80%;
@@ -341,8 +343,18 @@ export class Template extends LitElement implements AppTemplate {
               }
             }
 
+            #progress-container {
+              flex: 1 1 auto;
+              margin: 0 var(--bb-grid-size-2);
+              height: 100%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+
             #progress {
-              width: 100px;
+              width: 100%;
+              max-width: 320px;
               height: 4px;
               background: var(--secondary-color);
               border-radius: var(--bb-grid-size-16);
@@ -374,12 +386,18 @@ export class Template extends LitElement implements AppTemplate {
               &#back {
                 background: var(--bb-icon-arrow-back) center center / 20px 20px
                   no-repeat;
+                opacity: 0;
+                pointer-events: none;
               }
 
               &#share {
-                opacity: 0;
-                pointer-events: none;
+                display: none;
                 background: var(--bb-icon-share) center center / 20px 20px
+                  no-repeat;
+              }
+
+              &#restart {
+                background: var(--bb-icon-replay) center center / 20px 20px
                   no-repeat;
               }
 
@@ -510,8 +528,8 @@ export class Template extends LitElement implements AppTemplate {
               width: calc(100% - var(--bb-grid-size-12));
               left: 50%;
               transform: translateX(-50%);
-              background: var(--bb-progress) var(--primary-color) 16px center /
-                20px 20px no-repeat;
+              background: var(--default-progress, var(--bb-progress))
+                var(--primary-color) 16px center / 20px 20px no-repeat;
               color: var(--primary-text-color);
               padding: var(--bb-grid-size-3) var(--bb-grid-size-4)
                 var(--bb-grid-size-3) var(--bb-grid-size-12);
@@ -547,10 +565,12 @@ export class Template extends LitElement implements AppTemplate {
               min-width: 76px;
               height: var(--bb-grid-size-10);
               background: var(--primary-color, var(--bb-ui-50))
-                var(--bb-icon-generative) 12px center / 16px 16px no-repeat;
+                var(--start-icon, var(--bb-icon-generative)) 12px center / 16px
+                16px no-repeat;
               color: var(--primary-text-color, var(--bb-ui-700));
               border-radius: 20px;
-              border: 1px solid var(--primary-color, var(--bb-ui-100));
+              border: 1px solid
+                var(--start-border, var(--primary-color, var(--bb-ui-100)));
               font: 400 var(--bb-label-large) /
                 var(--bb-label-line-height-large) var(--bb-font-family);
               padding: 0 var(--bb-grid-size-5) 0 var(--bb-grid-size-9);
@@ -596,7 +616,7 @@ export class Template extends LitElement implements AppTemplate {
                   var(--bb-grid-size-4) var(--bb-grid-size-3);
                 transition: transform 0.6s cubic-bezier(0, 0, 0.3, 1);
                 transform: translateY(100%);
-                background: var(--primary-color);
+                background: var(--input-background, var(--primary-color));
                 color: var(--primary-text-color);
                 width: 100%;
                 display: flex;
@@ -617,15 +637,24 @@ export class Template extends LitElement implements AppTemplate {
                   & p {
                     display: flex;
                     align-items: flex-end;
-                    font: 400 var(--bb-title-medium) /
-                      var(--bb-title-line-height-medium) var(--bb-font-family);
+                    font: 500 var(--bb-title-small) /
+                      var(--bb-title-line-height-small) var(--bb-font-family);
                     margin: 0 0 var(--bb-grid-size-3) 0;
                     flex: 1;
+                    opacity: 0.8;
 
                     &.api-message {
                       font: 400 var(--bb-body-x-small) /
                         var(--bb-body-line-height-x-small) var(--bb-font-family);
                     }
+                  }
+
+                  .no-text-input {
+                    background: transparent;
+                    color: var(--primary-text-color);
+                    font: 400 var(--bb-title-medium) /
+                      var(--bb-title-line-height-medium) var(--bb-font-family);
+                    user-select: none;
                   }
 
                   & textarea,
@@ -703,8 +732,8 @@ export class Template extends LitElement implements AppTemplate {
           & #content {
             & #controls {
               & button#share {
-                opacity: 1;
-                pointer-events: auto;
+                display: block;
+                margin-left: var(--bb-grid-size-2);
               }
             }
           }
@@ -739,10 +768,18 @@ export class Template extends LitElement implements AppTemplate {
       >
         Back
       </button>
-      <div
-        id="progress"
-        style=${styleMap({ "--percentage": percentage.toFixed(2) })}
-      ></div>
+      <div id="progress-container">
+        <div
+          id="progress"
+          style=${styleMap({ "--percentage": percentage.toFixed(2) })}
+        ></div>
+      </div>
+      <button
+        id="restart"
+        @click=${() => {
+          this.dispatchEvent(new StopEvent(true));
+        }}
+      ></button>
       ${showShare
         ? html`<button
             id="share"
@@ -755,7 +792,7 @@ export class Template extends LitElement implements AppTemplate {
           >
             Share
           </button>`
-        : html`<div id="share"></div>`}
+        : nothing}
       <div
         id="older-data"
         class=${classMap({
@@ -804,6 +841,7 @@ export class Template extends LitElement implements AppTemplate {
       // Render the output.
       if (lastOutput !== null) {
         activityContents = html`<bb-multi-output
+          .showAsStatus=${true}
           .outputs=${lastOutput.value ?? null}
         ></bb-multi-output>`;
       }
@@ -918,22 +956,26 @@ export class Template extends LitElement implements AppTemplate {
           canProceed = false;
         }
 
-        if (typeof input.value === "string") {
+        let value: string | LLMContent = input.value;
+        if (typeof value === "string") {
+          value = maybeConvertToYouTube(input.value);
+        }
+
+        if (typeof value === "string") {
           if (input.dataset.type === "llm-content") {
-            inputValues[input.name] = this.#toLLMContentWithTextPart(
-              input.value
-            );
+            inputValues[input.name] =
+              input.dataset.empty === "true"
+                ? { parts: [] }
+                : this.#toLLMContentWithTextPart(value);
           } else if (input.dataset.type === "llm-content-array") {
-            inputValues[input.name] = [
-              this.#toLLMContentWithTextPart(input.value),
-            ];
+            inputValues[input.name] = [this.#toLLMContentWithTextPart(value)];
           } else {
-            inputValues[input.name] = input.value;
+            inputValues[input.name] = value;
           }
 
-          input.value = "";
+          value = "";
         } else {
-          inputValues[input.name] = input.value as NodeValue;
+          inputValues[input.name] = value as NodeValue;
         }
 
         if (assetShelf && assetShelf.value) {
@@ -976,6 +1018,11 @@ export class Template extends LitElement implements AppTemplate {
             </p>
             ${map(secretEvent.keys, (key) => {
               if (key.startsWith("connection:")) {
+                if (key === `connection:${SIGN_IN_CONNECTION_ID}`) {
+                  // When the connection id is a sign in, we never bring up
+                  // the input dialog -- it is presumed to exist.
+                  return nothing;
+                }
                 return html`<bb-connection-input
                   id=${key}
                   .connectionId=${key.replace(/^connection:/, "")}
@@ -1013,14 +1060,100 @@ export class Template extends LitElement implements AppTemplate {
         const disabled =
           valueIsDefined && (valueHasKeys || valueIsNonEmptyArray);
 
-        inputContents = html`
-          <bb-add-asset-button
-            .anchor=${"above"}
-            .useGlobalPosition=${false}
-            .showGDrive=${this.showGDrive}
-            ?disabled=${disabled}
-          ></bb-add-asset-button>
+        // We have to inspect the properties to determine what is allowed here,
+        // but it is theoretically possible for multiple properties to define
+        // different allowed values. For now we just roll through and pick out
+        // the first one and go with what it says.
+        let allowAddAssets = false;
 
+        // Setting this to null will allow all default types through.
+        let allowedUploadMimeTypes: string | null = null;
+        let textToSpeech = false;
+        let textInput = false;
+
+        const supportedActions = {
+          upload: false,
+          youtube: false,
+          drawable: false,
+          gdrive: false,
+        };
+
+        propSearch: for (const [, prop] of props) {
+          if (!prop.format) {
+            // Any.
+            allowAddAssets = true;
+            textToSpeech = true;
+            textInput = true;
+            supportedActions.upload = true;
+            supportedActions.youtube = true;
+            supportedActions.drawable = true;
+            supportedActions.gdrive = true;
+            continue;
+          }
+
+          switch (prop.format) {
+            case "upload": {
+              allowAddAssets = true;
+              supportedActions.upload = true;
+              break propSearch;
+            }
+
+            case "mic": {
+              allowAddAssets = true;
+              allowedUploadMimeTypes = "audio/*";
+              supportedActions.upload = true;
+              break propSearch;
+            }
+
+            case "videocam": {
+              allowAddAssets = true;
+              allowedUploadMimeTypes = "video/*";
+              supportedActions.upload = true;
+              supportedActions.youtube = true;
+              break propSearch;
+            }
+
+            case "image": {
+              allowAddAssets = true;
+              allowedUploadMimeTypes = "image/*";
+              supportedActions.upload = true;
+              break propSearch;
+            }
+
+            case "edit_note": {
+              allowAddAssets = true;
+              allowedUploadMimeTypes = "text/*";
+              supportedActions.upload = true;
+              textToSpeech = true;
+              textInput = true;
+              break propSearch;
+            }
+
+            default: {
+              // Any.
+              allowAddAssets = true;
+              textToSpeech = true;
+              textInput = true;
+              supportedActions.upload = true;
+              supportedActions.youtube = true;
+              supportedActions.drawable = true;
+              supportedActions.gdrive = true;
+              break propSearch;
+            }
+          }
+        }
+
+        inputContents = html`
+          ${allowAddAssets
+            ? html`<bb-add-asset-button
+                .anchor=${"above"}
+                .supportedActions=${supportedActions}
+                .allowedUploadMimeTypes=${allowedUploadMimeTypes}
+                .useGlobalPosition=${false}
+                .showGDrive=${this.showGDrive}
+                ?disabled=${disabled}
+              ></bb-add-asset-button>`
+            : nothing}
           ${repeat(props, ([name, schema]) => {
             const dataType = isLLMContentArrayBehavior(schema)
               ? "llm-content-array"
@@ -1045,44 +1178,66 @@ export class Template extends LitElement implements AppTemplate {
                 ${schema.description ? html`${schema.description}` : nothing}
               </p>
 
-              <textarea
-                placeholder=${hasAssetEntered
-                  ? "Type or upload your response."
-                  : "⌘-⏎ to submit"}
-                name=${name}
-                type="text"
-                data-type=${dataType}
-                .value=${inputValue}
-                ?disabled=${disabled}
-              ></textarea>
-              <bb-asset-shelf ${ref(this.#assetShelfRef)}></bb-asset-shelf>
+              ${textInput
+                ? html`<textarea
+                    placeholder=${hasAssetEntered
+                      ? "Type or upload your response."
+                      : "Press Submit to continue"}
+                    name=${name}
+                    type="text"
+                    data-type=${dataType}
+                    .value=${inputValue}
+                    ?disabled=${disabled}
+                  ></textarea>`
+                : allowAddAssets
+                  ? html`<div class="no-text-input">
+                        ${hasAssetEntered
+                          ? "Upload your response."
+                          : "Press Submit to continue"}
+                      </div>
+                      <input
+                        type="hidden"
+                        data-type=${dataType}
+                        data-empty="true"
+                        name=${name}
+                      />`
+                  : nothing}
+              <bb-asset-shelf
+                @assetchanged=${() => {
+                  this.requestUpdate();
+                }}
+                ${ref(this.#assetShelfRef)}
+              ></bb-asset-shelf>
             </div>`;
           })}
 
           <div class="controls">
-            <bb-speech-to-text
-              ?disabled=${disabled}
-              @bbutterance=${(evt: UtteranceEvent) => {
-                if (!this.#inputRef.value) {
-                  return;
-                }
+            ${textToSpeech
+              ? html`<bb-speech-to-text
+                  ?disabled=${disabled}
+                  @bbutterance=${(evt: UtteranceEvent) => {
+                    if (!this.#inputRef.value) {
+                      return;
+                    }
 
-                const inputField =
-                  this.#inputRef.value.querySelector<HTMLTextAreaElement>(
-                    "textarea"
-                  );
-                if (!inputField) {
-                  return;
-                }
+                    const inputField =
+                      this.#inputRef.value.querySelector<HTMLTextAreaElement>(
+                        "textarea"
+                      );
+                    if (!inputField) {
+                      return;
+                    }
 
-                inputField.value = evt.parts
-                  .map((part) => part.transcript)
-                  .join("");
-              }}
-            ></bb-speech-to-text>
+                    inputField.value = evt.parts
+                      .map((part) => part.transcript)
+                      .join("");
+                  }}
+                ></bb-speech-to-text>`
+              : nothing}
             <button
               id="continue"
               ?disabled=${disabled}
+              title="Submit"
               @click=${() => {
                 continueRun(currentItem.id ?? "unknown");
               }}
@@ -1107,11 +1262,19 @@ export class Template extends LitElement implements AppTemplate {
     }
 
     return html`<div
-      @keydown=${(evt: KeyboardEvent) => {
-        const isMac = navigator.platform.indexOf("Mac") === 0;
-        const isCtrlCommand = isMac ? evt.metaKey : evt.ctrlKey;
+      @transitionend=${() => {
+        if (!this.#inputRef.value || !active) {
+          return;
+        }
 
-        if (!(evt.key === "Enter" && isCtrlCommand)) {
+        const input =
+          this.#inputRef.value.querySelector<HTMLInputElement>(
+            "input,textarea"
+          );
+        input?.focus();
+      }}
+      @keydown=${(evt: KeyboardEvent) => {
+        if (evt.key !== "Enter") {
           return;
         }
 
@@ -1178,6 +1341,18 @@ export class Template extends LitElement implements AppTemplate {
     }
 
     if (typeof this.options.splashImage === "string") {
+      // Special-case the default theme based on the mime types.
+      // TODO: Replace this with a more robust check.
+      if (this.options.isDefaultTheme) {
+        styles["--splash-width"] = "50%";
+        styles["--splash-fill"] = "contain";
+        styles["--start-border"] = "var(--secondary-color)";
+        styles["--default-progress"] = "url(/images/progress-inverted.svg)";
+        styles["--start-icon"] = "var(--bb-icon-generative-inverted)";
+        styles["--input-background"] =
+          "oklch(from var(--primary-color) calc(l + 0.2) c h)";
+      }
+
       styles["--splash-image"] = this.options.splashImage;
     }
 
@@ -1286,6 +1461,7 @@ export class Template extends LitElement implements AppTemplate {
     if (this.showAddAssetModal) {
       addAssetModal = html`<bb-add-asset-modal
         .assetType=${this.#addAssetType}
+        .allowedMimeTypes=${this.#allowedMimeTypes}
         @bboverlaydismissed=${() => {
           this.showAddAssetModal = false;
         }}
@@ -1327,6 +1503,7 @@ export class Template extends LitElement implements AppTemplate {
       @bbaddassetrequest=${(evt: AddAssetRequestEvent) => {
         this.showAddAssetModal = true;
         this.#addAssetType = evt.assetType;
+        this.#allowedMimeTypes = evt.allowedMimeTypes;
       }}
     >
       <div id="content">${content}</div>

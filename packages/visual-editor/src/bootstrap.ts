@@ -10,6 +10,7 @@ import { MainArguments } from "./index.js";
 import { LanguagePack } from "@breadboard-ai/shared-ui/types/types.js";
 import { GoogleDriveBoardServer } from "@breadboard-ai/google-drive-kit";
 import {
+  FileSystemEntry,
   Kit,
   MutableGraphStore,
   NodeHandlerContext,
@@ -21,9 +22,26 @@ export { bootstrap };
 export type BootstrapArguments = {
   connectionServerUrl?: URL;
   requiresSignin?: boolean;
+  defaultBoardService?: string;
   kits?: Kit[];
+  /**
+   * Allows preloading graphs into the graphstore. Useful when you want to
+   * supply graphs that aren't part of any board server.
+   * @param graphStore
+   * @returns
+   */
   graphStorePreloader?: (graphStore: MutableGraphStore) => void;
+  /**
+   * Allows filtering what modules can be invoked by the runtime.
+   * @param context
+   * @returns
+   */
   moduleInvocationFilter?: (context: NodeHandlerContext) => Outcome<void>;
+  /**
+   * Provides a way to specify additional entries as part of the `/env/` file
+   * system.
+   */
+  env?: FileSystemEntry[];
 };
 
 function getUrlFromBoardServiceFlag(
@@ -76,6 +94,19 @@ function bootstrap(args: BootstrapArguments = {}) {
     document.documentElement.classList.add("dark-theme");
   }
 
+  const esKey = "extended-settings";
+  if (params.has(esKey)) {
+    const keyVal = params.get(esKey);
+    if (keyVal === "1" || keyVal === "true") {
+      globalThis.localStorage.setItem(esKey, "true");
+    } else {
+      globalThis.localStorage.removeItem(esKey);
+    }
+  }
+
+  const showExtendedSettings =
+    globalThis.localStorage.getItem(esKey) === "true";
+
   async function init() {
     await StringsHelper.initFrom(LANGUAGE_PACK as LanguagePack);
 
@@ -88,14 +119,18 @@ function bootstrap(args: BootstrapArguments = {}) {
       settings: SettingsStore.instance(),
       version: pkg.version,
       gitCommitHash: GIT_HASH,
-      boardServerUrl: getUrlFromBoardServiceFlag(BOARD_SERVICE),
+      boardServerUrl: getUrlFromBoardServiceFlag(
+        BOARD_SERVICE || args.defaultBoardService
+      ),
       connectionServerUrl: args?.connectionServerUrl,
       requiresSignin: args?.requiresSignin,
       enableTos: ENABLE_TOS,
       tosHtml: TOS_HTML,
       kits: args?.kits,
+      showExtendedSettings,
       graphStorePreloader: args?.graphStorePreloader,
       moduleInvocationFilter: args?.moduleInvocationFilter,
+      env: args?.env,
     };
 
     // window.oncontextmenu = (evt) => evt.preventDefault();

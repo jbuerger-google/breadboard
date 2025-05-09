@@ -26,7 +26,6 @@ import { createRef, ref, Ref } from "lit/directives/ref.js";
 import { styleMap } from "lit/directives/style-map.js";
 import "../../flow-gen/flowgen-homepage-panel.js";
 import "./homepage-search-button.js";
-import type { HomepageSearchButton } from "./homepage-search-button.js";
 import { icons } from "../../styles/icons.js";
 import "./gallery.js";
 import {
@@ -77,7 +76,7 @@ export class ProjectListing extends LitElement {
   @property()
   accessor selectedLocation = "Browser Storage";
 
-  @state()
+  @property()
   accessor filter: string | null = null;
 
   @state()
@@ -737,16 +736,6 @@ export class ProjectListing extends LitElement {
                  gets quite aggressively re-rendered on any filter change, which
                  makes it difficult for the button to keep any state. We
                  probably need a small refactor to get the desired layout. -->
-            <bb-homepage-search-button
-              .value=${this.filter ?? ""}
-              @input=${(
-                evt: InputEvent & {
-                  target: HomepageSearchButton;
-                }
-              ) => {
-                this.filter = evt.target.value;
-              }}
-            ></bb-homepage-search-button>
             <div id="location-selector-container">
               ${this.showAdditionalSources
                 ? html`<select
@@ -950,7 +939,6 @@ export class ProjectListing extends LitElement {
                 },
                 async (error) => {
                   if (error.message.includes("No folder ID or access token")) {
-
                     if (!this.#availableConnections) {
                       this.#availableConnections = fetchAvailableConnections(
                         this,
@@ -969,8 +957,8 @@ export class ProjectListing extends LitElement {
                       pending: () => html`<p>Loading connections ...</p>`,
                       error: () => html`<p>Error loading connections</p>`,
                       complete: (result: Connection[]) => {
-                        const gdrive = (result as Array<Object>).find(
-                          (connection: any) =>
+                        const gdrive = (result as Array<{ id: string }>).find(
+                          (connection: { id: string }) =>
                             connection.id === gdriveConnectionID
                         );
                         if (gdrive) {
@@ -982,13 +970,22 @@ export class ProjectListing extends LitElement {
                             </p>
                             <bb-connection-signin
                               .connection=${gdrive}
-                                        @bbtokengranted=${({
-                              token,
-                              expiresIn,
-                            }: HTMLElementEventMap["bbtokengranted"]) => {
-                            this.dispatchEvent(new InputEnterEvent(this.id, {clientId: gdriveConnectionID, secret: token, expiresIn}, false));
-                            
-                            }}
+                              @bbtokengranted=${({
+                                token,
+                                expiresIn,
+                              }: HTMLElementEventMap["bbtokengranted"]) => {
+                                this.dispatchEvent(
+                                  new InputEnterEvent(
+                                    this.id,
+                                    {
+                                      clientId: gdriveConnectionID,
+                                      secret: token,
+                                      expiresIn,
+                                    },
+                                    false
+                                  )
+                                );
+                              }}
                             ></bb-connection-signin>
                           </div>`;
                         }
