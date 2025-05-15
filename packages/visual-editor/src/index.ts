@@ -59,6 +59,11 @@ import {
   HandshakeReadyMessage,
   HandshakeCompleteMessage,
 } from "@breadboard-ai/shared-ui/iframe/messages.js";
+import {
+  isHandshakeCompleteMessage,
+  HandshakeReadyMessage,
+  HandshakeCompleteMessage,
+} from "@breadboard-ai/shared-ui/iframe/messages.js";
 import { addNodeProxyServerConfig } from "./data/node-proxy-servers";
 import { provide } from "@lit/context";
 import { RecentBoardStore } from "./data/recent-boards";
@@ -107,7 +112,7 @@ import {
 import { sideBoardRuntime } from "@breadboard-ai/shared-ui/contexts/side-board-runtime.js";
 import { googleDriveClientContext } from "@breadboard-ai/shared-ui/contexts/google-drive-client-context.js";
 import { SideBoardRuntime } from "@breadboard-ai/shared-ui/sideboards/types.js";
-import { IframeConfig, OverflowAction } from "@breadboard-ai/shared-ui/types/types.js";
+import { IframeConfig, OverflowAction, SETTINGS_TYPE } from "@breadboard-ai/shared-ui/types/types.js";
 import { MAIN_BOARD_ID } from "@breadboard-ai/shared-ui/constants/constants.js";
 import { createA2Server } from "@breadboard-ai/a2";
 import { envFromSettings } from "./utils/env-from-settings";
