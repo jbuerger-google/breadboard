@@ -21,7 +21,7 @@ export interface HandshakeReadyMessage {
 }
 
 /** Event sent from /oauth. */
-interface OauthRedirectMessage {
+export interface OauthRedirectMessage {
   type: 'oauth_redirect';
   /** If true, the user successfully signed in. */
   success: boolean;
@@ -33,14 +33,14 @@ interface BackClickedMessage {
 }
 
 /** Event when the Breadboard homepage is loaded. */
-interface HomeLoadedMessage {
+export interface HomeLoadedMessage {
   type: 'home_loaded';
   /** If true, the "Sign in" button is not shown. */
   isSignedIn: boolean;
 }
 
 /** Event when a new breadboard has been created. */
-interface BoardIdCreatedMessage {
+export interface BoardIdCreatedMessage {
   type: 'board_id_created';
   /**
    * The id of the newly created Breadboard.
@@ -87,6 +87,13 @@ export interface CreateNewBoardMessage {
    * If the string is empty, App Catalyst will not be called.
    */
   prompt: string;
+}
+
+/** Checks if a message is of type CreateNewBoardMessage. */
+export function isCreateNewBoardMessage(
+  message: IframeMessage,
+): message is CreateNewBoardMessage {
+  return message.type === 'create_new_board';
 }
 
 /** Message that relays to Breadboard that it's in an parent iframe iframe. */

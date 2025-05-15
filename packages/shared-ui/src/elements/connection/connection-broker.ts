@@ -9,15 +9,24 @@ import {
   oauthTokenBroadcastChannelName,
   type OAuthStateParameter,
 } from "./connection-common.js";
+import {
+  OauthRedirectMessage
+} from "@breadboard-ai/shared-ui/iframe/messages.js";
 
 export class ConnectionBroker extends HTMLElement {
   constructor() {
     super();
+    console.log("in connection broker");
     this.attachShadow({ mode: "open" });
   }
 
   async connectedCallback() {
     const shadow = this.shadowRoot!;
+    const params = new URLSearchParams(window.location.search);
+    let embedderRedirect: string | undefined;
+    if (!!params.get('origin')) {
+      embedderRedirect = `${params.get('origin')!}/opals/oauth`;
+    }
     const displayError = (message: string) => {
       const p = document.createElement("p");
       p.textContent = `Error: ${message} Please close this window and try to sign in again.`;
@@ -59,6 +68,8 @@ export class ConnectionBroker extends HTMLElement {
       displayError('No "code" parameter could be found in the URL.');
       return;
     }
+    const redirect_path = embedderRedirect ?? new URL(window.location.href).pathname;
+    console.log("Redirect path in connection-broker:", redirect_path);
 
     // Call the token grant API.
     if (!import.meta.env.VITE_CONNECTION_SERVER_URL) {
@@ -72,13 +83,11 @@ export class ConnectionBroker extends HTMLElement {
     const grantUrl = new URL("grant", absoluteConnectionServerUrl);
     grantUrl.searchParams.set("connection_id", connectionId);
     grantUrl.searchParams.set("code", code);
-    grantUrl.searchParams.set(
-      "redirect_path",
-      new URL(window.location.href).pathname
-    );
+    grantUrl.searchParams.set("redirect_path", "https://b2607f8b04800100001434fa8ac131a6d1538000000d610fffe8400.proxy.googlers.com/opals/oauth");
     const response = await fetch(grantUrl, { credentials: "include" });
     if (!response.ok) {
       displayError("Connection service returned unexpected HTTP status.");
+      this.notifyEmbedder(false, origin);
       return;
     }
     let grantResponse: GrantResponse;
@@ -86,13 +95,23 @@ export class ConnectionBroker extends HTMLElement {
       grantResponse = await response.json();
     } catch (e) {
       displayError("Could not read JSON response from backend.");
+      this.notifyEmbedder(false, origin);
       return;
     }
 
     // Send the grant response back to the originating tab and close up shop.
     channel.postMessage(grantResponse);
+    this.notifyEmbedder(true, origin);
     channel.close();
     window.close();
+  }
+
+  notifyEmbedder(isSuccess: boolean, embedderOrigin: string){
+    if (origin) {
+      top?.postMessage(
+        {type: 'oauth_redirect', success: isSuccess} as OauthRedirectMessage,
+        embedderOrigin);
+    }
   }
 }
 

@@ -65,7 +65,7 @@ class SigninAdapter {
     settingsHelper?: SettingsHelper
   ) {
     if (!environment || !tokenVendor || !settingsHelper) {
-      this.state = "invalid";
+      this.state = "valid";
       return;
     }
     this.#tokenVendor = tokenVendor;
@@ -165,11 +165,19 @@ class SigninAdapter {
     redirectUri = new URL(redirectUri, new URL(window.location.href).origin)
       .href;
 
+    // If iframe origin has been set, use that as the redirect URI.
+    if (this.#settingsHelper) {
+      const iframeOrigin = this.#settingsHelper?.get(
+        SETTINGS_TYPE.CONNECTIONS, 'iframe_origin')?.value as string;
+      redirectUri = iframeOrigin ? `${iframeOrigin}/opals/oauth` : redirectUri;
+    }
+
     const connection = await this.#getConnection();
     if (!connection) return "";
 
     const authUrl = new URL(connection.authUrl);
     authUrl.searchParams.set("redirect_uri", redirectUri);
+    console.log("Redirect URI:", redirectUri);
     authUrl.searchParams.set(
       "state",
       JSON.stringify({

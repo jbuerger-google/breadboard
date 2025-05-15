@@ -21,6 +21,7 @@ import { FlowGenerator } from "./flow-generator.js";
 import { AppCatalystApiClient } from "./app-catalyst.js";
 import { classMap } from "lit/directives/class-map.js";
 import { spinAnimationStyles } from "../styles/spin-animation.js";
+import { isCreateNewBoardMessage, CreateNewBoardMessage, IframeMessage } from "../iframe/messages.js";
 
 const Strings = StringsHelper.forSection("ProjectListing");
 
@@ -162,12 +163,23 @@ export class FlowgenHomepagePanel extends LitElement {
           (this.#sampleIntentIndex + 1) % SAMPLE_INTENTS.length),
       SAMPLE_INTENTS_ROTATION_MS
     );
+    window.addEventListener("message", this.#handleMessage);
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     clearInterval(this.#rotateSampleIntentTimerId);
     this.#rotateSampleIntentTimerId = undefined;
+    window.removeEventListener('message', this.#handleMessage);
+  }
+
+  // Creates a new board if parent sends a message to do so.
+  #handleMessage(message: MessageEvent) {
+    if (isCreateNewBoardMessage(message.data as CreateNewBoardMessage)) {
+      void this.#generateBoard(message.data.prompt)
+        .then((graph) => this.#onGenerateComplete(graph))
+        .catch((error) => this.#onGenerateError(error));
+    }
   }
 
   override render() {

@@ -59,11 +59,6 @@ import {
   HandshakeReadyMessage,
   HandshakeCompleteMessage,
 } from "@breadboard-ai/shared-ui/iframe/messages.js";
-import {
-  isHandshakeCompleteMessage,
-  HandshakeReadyMessage,
-  HandshakeCompleteMessage,
-} from "@breadboard-ai/shared-ui/iframe/messages.js";
 import { addNodeProxyServerConfig } from "./data/node-proxy-servers";
 import { provide } from "@lit/context";
 import { RecentBoardStore } from "./data/recent-boards";
@@ -217,6 +212,7 @@ const BOARD_AUTO_SAVE_TIMEOUT = 1_500;
 
 const IFRAME_ORIGINS: string[] = [
   // Add valid origins here.
+  "https://b2607f8b04800100001434fa8ac131a6d1538000000d610fffe8400.proxy.googlers.com",
 ];
 
 @customElement("bb-main")
@@ -982,15 +978,18 @@ export class Main extends LitElement {
     window.addEventListener("pointerdown", this.#hideTooltipBound);
     window.addEventListener("keydown", this.#onKeyDownBound);
     window.addEventListener("bbrundownload", this.#downloadRunBound);
-        // Listen for message to determine whether parent iframe is iframing Breadboard.
-    window.addEventListener("message", this.#listenForHandshake);
 
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('origin')) {
+      this.iframeConfig = {origin: params.get('origin')!};
+    }
+    // Listen for message to determine whether parent iframe is iframing Breadboard.
+    window.addEventListener("message", this.#listenForHandshake);
     // Because we do not yet know whether or which parent iframe environment is
     // iframing Breadboard, send a postMessage to each possible origin to
     // indicate Breadboard is ready to receive data from parent iframe.
-    IFRAME_ORIGINS.forEach((origin) => {
-      top?.postMessage({type: 'handshake_ready'} as HandshakeReadyMessage, origin);
-    }); 
+    top?.postMessage({type: 'handshake_ready'} as HandshakeReadyMessage, "*");
+    console.log('handshake sent');
   }
 
   disconnectedCallback(): void {
@@ -1010,7 +1009,23 @@ export class Main extends LitElement {
       isHandshakeCompleteMessage(message as HandshakeCompleteMessage) &&
       IFRAME_ORIGINS.includes(message.origin)
     ) {
-      this.iframeConfig = {origin: message.origin};
+      const origin = message.origin; 
+      this.iframeConfig = {origin: origin};
+      if (this.settingsHelper) {
+        this.settingsHelper.set(SETTINGS_TYPE.CONNECTIONS, 'iframe_origin', 
+          {
+            name: 'iframe_origin',
+            value: this.iframeConfig.origin
+          })
+      }
+      const signInAdapter = new SigninAdapter(
+        this.tokenVendor,
+        this.environment,
+        this.settingsHelper
+      );
+      top?.postMessage(
+        {type: 'home_loaded', isSignedIn: signInAdapter.state === "valid"}, "*");
+      console.log('Sent home loaded');
     }
   }
 
@@ -1631,11 +1646,20 @@ export class Main extends LitElement {
 
     this.#setBoardPendingSaveState(false);
     this.#persistBoardServerAndLocation(boardServerName, location);
-
+    this.#emitBoardId(url.href);
     this.#attemptBoardLoad(
       new BreadboardUI.Events.StartEvent(url.href, undefined, creator),
       id
     );
+  }
+
+  #emitBoardId(href: string) {
+    if (this.iframeConfig && top) {
+      top.postMessage({
+        type: 'breadboard_id_created',
+        id: href
+      } , this.iframeConfig.origin);
+    }
   }
 
   async #attemptBoardDelete(

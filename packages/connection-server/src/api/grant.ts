@@ -58,9 +58,10 @@ export async function grant(
   const origin =
     req.headers.origin || inferOriginFromHostname(req.headers.host);
   const redirectUrl = new URL(params.redirect_path, origin).href;
+  console.log(redirectUrl);
   tokenUrl.searchParams.set("grant_type", "authorization_code");
   tokenUrl.searchParams.set("code", params.code);
-  tokenUrl.searchParams.set("redirect_uri", redirectUrl);
+  tokenUrl.searchParams.set("redirect_uri", "https://b2607f8b04800100001434fa8ac131a6d1538000000d610fffe8400.proxy.googlers.com/opals/oauth");
   tokenUrl.searchParams.set("client_id", connectionConfig.oauth.client_id);
   tokenUrl.searchParams.set(
     "client_secret",
