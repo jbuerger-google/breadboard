@@ -112,11 +112,14 @@ import { GoogleDriveClient } from "@breadboard-ai/google-drive-kit/google-drive-
 
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import {
-  EmbedHandler,
-  embedState,
+  EmbedHandler, 
   EmbedState,
-  ToggleIterateOnPromptMessage,
+  IterateOnPromptMessage,
+  ToggleIterateOnPromptMessage} from "@breadboard-ai/embed/types/types.js";
+import {
+  embedState,
 } from "@breadboard-ai/embed";
+import { IterateOnPromptEvent } from "@breadboard-ai/shared-ui/events/events.js";
 
 const STORAGE_PREFIX = "bb-main";
 const LOADING_TIMEOUT = 1250;
@@ -930,6 +933,10 @@ export class Main extends LitElement {
           this.environment,
           this.settingsHelper
         );
+        // Once we've determined the sign-in status, relay it to an embedder.
+        this.#embedHandler?.sendToEmbedder(
+          {type: "home_loaded", isSignedIn: signInAdapter.state === "valid"}
+        )
         if (signInAdapter.state === "signedout") {
           return;
         }
@@ -978,12 +985,20 @@ export class Main extends LitElement {
       this.embedState = embedState();
     }
 
+
     this.#embedHandler?.subscribe(
       "toggle_iterate_on_prompt",
       async (message: ToggleIterateOnPromptMessage) => {
         this.embedState.showIterateOnPrompt = message.on;
       }
     );
+    this.#embedHandler?.subscribe(
+      "handshake_complete",
+      async () => {
+      }
+    );
+    this.#embedHandler?.sendToEmbedder(
+      {type: "handshake_ready"});
   }
 
   disconnectedCallback(): void {
@@ -4137,6 +4152,16 @@ export class Main extends LitElement {
                   this.tab?.id,
                   this.#runtime.util.createWorkspaceSelectionChangeId()
                 );
+              }}
+              @bbiterateonprompt=${(iterateOnPromptEvent: IterateOnPromptEvent) => {
+                  const message: IterateOnPromptMessage = {
+                    type: 'iterate_on_prompt',
+                    title: iterateOnPromptEvent.title,
+                    promptTemplate: iterateOnPromptEvent.promptTemplate,
+                    boardId: iterateOnPromptEvent.boardId,
+                    nodeId: iterateOnPromptEvent.nodeId,
+                  };
+                  this.#embedHandler?.sendToEmbedder(message);
               }}
             ></bb-ui-controller>
         ${

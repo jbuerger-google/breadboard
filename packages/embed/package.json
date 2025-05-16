@@ -4,7 +4,11 @@
   "description": "Embeddable framework for Breadboard",
   "main": "./dist/src/index.js",
   "exports": {
-    ".": "./dist/src/index.js"
+    ".": "./dist/src/index.js",
+    "./*.js": {
+      "types": "./dist/src/*.d.ts",
+      "default": "./dist/src/*.js"
+    }
   },
   "types": "dist/src/index.d.ts",
   "type": "module",

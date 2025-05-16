@@ -16,7 +16,7 @@ import {
   NodeHandlerContext,
   Outcome,
 } from "@google-labs/breadboard";
-import type { EmbedHandler } from "@breadboard-ai/embed";
+import type { EmbedHandler } from "@breadboard-ai/embed/types/types.js";
 
 export { bootstrap };
 

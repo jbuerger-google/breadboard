@@ -57,6 +57,7 @@ import { MAIN_BOARD_ID } from "../../constants/constants";
 import { Project } from "../../state";
 import {
   FastAccessSelectEvent,
+  IterateOnPromptEvent,
   NodePartialUpdateEvent,
   ToastEvent,
   ToastType,
@@ -71,10 +72,10 @@ import { FlowGenConstraint } from "../../flow-gen/flow-generator";
 import { ConnectorView } from "../../connectors/types";
 import { SignalWatcher } from "@lit-labs/signals";
 import { icons } from "../../styles/icons";
-import { EmbedState } from "../../../../embed/dist/src/types/types";
 import { consume } from "@lit/context";
 import { embedderContext } from "../../contexts/embedder";
 import { embedState } from "@breadboard-ai/embed";
+import { EmbedState } from "@breadboard-ai/embed/types/types.js";
 const Strings = StringsHelper.forSection("Editor");
 
 // A type that is like a port (and fits InspectablePort), but could also be
@@ -182,6 +183,29 @@ export class EntityEditor extends SignalWatcher(LitElement) {
           height: 20px;
           flex: 0 0 auto;
           margin-right: var(--bb-grid-size);
+        }
+      }
+
+      #iterate-on-prompt {
+        height: var(--bb-grid-size-7);
+        white-space: nowrap;
+        padding: 0 var(--bb-grid-size-4) 0 var(--bb-grid-size-4);
+        border-radius: var(--bb-grid-size-16);
+        margin: 0 var(--bb-grid-size-2) 0 0;
+        background: var(--bb-neutral-0);
+        color: #004a77;
+        font: 500 var(--bb-title-small) / var(--bb-title-line-height-small)
+          var(--bb-font-family);
+        display: flex;
+        align-items: center;
+        border-radius: 100px;
+        border: none;
+        transition: background 0.2s cubic-bezier(0, 0, 0.3, 1);
+        cursor: pointer;
+        background: var(--bb-grid-size-3) center / 18px 18px no-repeat #c2e7ff;
+        &:hover,
+        &:focus {
+          background-color: #96d6ff;
         }
       }
 
@@ -1132,6 +1156,9 @@ export class EntityEditor extends SignalWatcher(LitElement) {
               this.#submit(this.values);
             }}
           />
+          ${this.embedState?.showIterateOnPrompt ? 
+            this.#renderIterateOnPromptButton(nodeId, node.title()) : 
+            nothing}
         </h1>
         <div id="type"></div>
         <div id="content">
@@ -1143,6 +1170,36 @@ export class EntityEditor extends SignalWatcher(LitElement) {
     });
 
     return html`${until(value, html`<div id="generic-status">Loading...</div>`)}`;
+  }
+
+  #renderIterateOnPromptButton(nodeId: NodeIdentifier, nodeTitle: string) {
+    const pathname = new URL(this.graph?.raw().url ?? window.location.href)
+      .pathname;
+    const matches = pathname.match(new RegExp('/board/boards/(.*.bgl.json).*'));
+    if (!matches) {
+      return nothing;
+    }
+    const boardId = matches[1];
+    return html`
+      <button 
+        id="iterate-on-prompt" 
+        @click=${() => {
+          // The prompt template must retrieved on click, otherwise the user's most
+          // recent changes will not be included in the prompt.
+        if (!this.#formRef.value) {
+            return;
+          }
+          const formValues = this.#copyFormValues(this.#formRef.value!);
+          if (!formValues.config$prompt) {
+            return;
+          }
+          const promptTemplate = formValues.config$prompt as string;
+          this.dispatchEvent(new IterateOnPromptEvent(
+            nodeTitle, promptTemplate, boardId, nodeId
+          ));
+        }}>
+        Iterate on prompt
+      </button>`;
   }
 
   #renderTextEditorPort(
@@ -1627,7 +1684,6 @@ export class EntityEditor extends SignalWatcher(LitElement) {
     }
 
     return [
-      // html`Embedded ${this.embedState.showIterateOnPrompt}`,
       this.#renderSelectedItem(),
       html`<bb-fast-access-menu
           ${ref(this.#fastAccessRef)}
