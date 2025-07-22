@@ -16,6 +16,7 @@
     "copy-assets": "wireit",
     "dev": "npm run serve --watch",
     "dev-drive": "VITE_BOARD_SERVICE='drive:' npm run serve --watch",
+    "dev-iframe": "VITE_BOARD_SERVICE='drive:' VITE_VALID_REDIRECT_URI_ORIGINS='[\"https://b2607f8b04800100001434fa8ac131a6d1538000000d610fffe8400.proxy.googlers.com\"]' npm run serve --watch",
     "docker-build": "docker build --build-context=breadboard=../.. --tag=unified-server .",
     "docker-clean": "docker image rm unified-server",
     "docker-logs": "docker logs unified-server",
